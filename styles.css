@@ -283,3 +283,25 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
   .hpctl .field{grid-column:1/-1}
 }
 @media (min-width:821px){ .combat .back{display:none} }
+
+/* Encounters */
+.encbody{display:grid;gap:12px;max-height:62dvh;overflow:auto}
+.encgroup h3{margin:0 0 4px;font:700 1.05rem var(--serif);color:var(--accent)}
+.enclist,.encmons{list-style:none;margin:0;padding:0}
+.enclist li{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.encinfo{flex:1;display:grid;gap:2px;min-width:0}
+.encinfo .nm{font:700 1.05rem var(--serif);color:var(--ink)}
+.encinfo .meta{color:var(--muted);font-size:.88rem}
+.encnote{font-size:.88rem;font-style:italic}
+.encctl{display:flex;gap:6px}
+.ench{display:flex;align-items:baseline;gap:10px;margin:4px 0 6px;font:700 1.05rem var(--sans)}
+.encmons li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.encmons .nm{font:700 1rem var(--serif)}
+.encmons .nm small{font:400 .82rem var(--sans);color:var(--muted);margin-left:6px}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper b{min-width:26px;text-align:center;font-size:1.1rem}
+.addlist.short{max-height:none}
+.cnote{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--accent-soft);font-size:.92rem}
+.cnote b{font-family:var(--serif);margin-right:6px}
+#encDlg{width:min(760px,calc(100vw - 32px))}
+:root[data-theme="red"] .cnote{background:#000;border-bottom-width:2px}

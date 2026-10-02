@@ -55,6 +55,26 @@ export async function mergePartyFromBackup(p) {
   return true;
 }
 export function combatantCount() { return cs.enc.combatants.length; }
+export function monsterCount() { return cs.enc.combatants.filter(c => c.kind === 'monster').length; }
+// Current monsters as [{id, count}] for saving an encounter
+export function monsterCounts() {
+  const out = [];
+  cs.enc.combatants.filter(c => c.kind === 'monster').forEach(c => {
+    const r = out.find(x => x.id === c.monsterId);
+    if (r) r.count++; else out.push({ id: c.monsterId, count: 1 });
+  });
+  return out;
+}
+export function clearMonsters() {
+  cs.enc.combatants = cs.enc.combatants.filter(c => c.kind === 'pc');
+  cs.enc.started = false; cs.enc.round = 0; cs.enc.turn = -1; cs.enc.loaded = null;
+  cs.sel = null; persist();
+}
+export function setLoaded(enc, added) {
+  if (!added || !cs.enc.loaded) cs.enc.loaded = { id: enc.id, name: enc.name, notes: enc.notes || '' };
+  else cs.enc.loaded = { ...cs.enc.loaded, name: `${cs.enc.loaded.name} + ${enc.name}`, notes: [cs.enc.loaded.notes, enc.notes].filter(Boolean).join(' / ') };
+  persist(); render();
+}
 
 /* ---------- model helpers ---------- */
 const pc = id => cs.party.find(p => p.id === id);
@@ -262,12 +282,14 @@ export function render() {
            <button class="btn primary big" type="button" data-c="start">Start combat</button>`}
       <span class="spacer"></span>
       ${(e.sitOut || []).map(id => pc(id)).filter(Boolean).map(p => `<button class="btn ghost" type="button" data-c="return" data-pid="${p.id}">Bring back ${esc(p.name)}</button>`).join('')}
+      <button class="btn" type="button" data-c="encounters">Encounters</button>
+      ${e.combatants.some(c => c.kind === 'monster') ? '<button class="btn" type="button" data-c="saveenc">Save encounter</button>' : ''}
       <button class="btn" type="button" data-c="addmon">Add monsters</button>
       <button class="btn" type="button" data-c="party">Party</button>
       ${e.combatants.some(c => c.kind === 'monster') || e.started ? '<button class="btn danger" type="button" data-c="end">End combat</button>' : ''}
     </div>
     <div class="cmain">
-      <ol class="clist" aria-label="Initiative order">${e.combatants.map(rowHtml).join('') || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
+      <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${e.combatants.map(rowHtml).join('') || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
       <section class="cdetail" aria-live="polite">${detailHtml()}</section>
     </div>`;
 }
@@ -467,6 +489,8 @@ function onClick(e) {
     case 'next': return nextTurn(1);
     case 'prev': return nextTurn(-1);
     case 'end': return endCombat();
+    case 'encounters': return ctx.openEncounters();
+    case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
     case 'party': renderParty(); return document.querySelector('#partyDlg').showModal();
     case 'addmon': document.querySelector('#addQ').value = ''; renderAddList(); document.querySelector('#addDlg').showModal(); return;
     case 'sel': cs.sel = b.dataset.cid; render(); if (root.dataset.view !== 'detail') ctx.pushDetail(); root.dataset.view = 'detail'; root.querySelector('.cdetail').scrollTop = 0; return;

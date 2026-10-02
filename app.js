@@ -1,5 +1,6 @@
 import { db } from './db.js';
-import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
 import { blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
 const SRD_VERSION = 1;
@@ -571,7 +572,7 @@ async function onDetailAction(act, btn) {
 async function exportBackup() {
   const all = await db.all();
   const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
-  const data = { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup() };
+  const data = { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a');
   const d = new Date();
@@ -609,6 +610,8 @@ async function importBackup(file) {
   if (kept) parts.push(`${kept} already up to date`);
   if (removed) parts.push(`${removed} removed`);
   if (await mergePartyFromBackup(data.party)) parts.push('party updated');
+  const encN = await mergeEncountersFromBackup(data.encounters);
+  if (encN) parts.push(`${encN} encounter${encN === 1 ? '' : 's'} updated`);
   toast(`Backup loaded: ${parts.join(', ')}`);
 }
 
@@ -681,6 +684,11 @@ function wire() {
     setMode(b.dataset.mode);
   });
 
+  // Enter in a dialog's text field shouldn't submit (and close) the dialog
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches('dialog input')) e.preventDefault();
+  });
+
   // Android back button: detail → list
   window.addEventListener('popstate', () => {
     if (mode === 'combat') { $('#combatView').dataset.view = 'list'; return; }
@@ -706,10 +714,19 @@ async function start() {
     settings: () => state.settings,
     onChange: updateBadge,
     pushDetail: () => { if (isNarrow()) history.pushState({ view: 'cdetail' }, ''); },
+    openEncounters, saveEncounter: saveFromCombat,
+  });
+  initEncounters({
+    toast, confirmBox, choice,
+    getMonster: id => state.byId.get(id),
+    allMonsters: () => state.monsters,
+    combat: { monsterCount, clearMonsters, setLoaded, addMonster: addMonsterToCombat },
+    goCombat: () => { setMode('combat'); updateBadge(); },
   });
   try {
     await loadAll();
     await loadCombat();
+    await loadEncounters();
     updateBadge();
   } catch (err) {
     detailEl.innerHTML = `<div class="empty"><h2>The library couldn't load</h2><p>${esc(err.message)}. Reload the page; if it keeps happening, load your latest backup file.</p></div>`;
