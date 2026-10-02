@@ -385,3 +385,22 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .picclose{padding:0;border:0;background:none;cursor:zoom-out}
 .picclose img{display:block;max-width:96vw;max-height:94dvh;object-fit:contain;border-radius:8px}
 @media (max-width:820px){.picedit{grid-template-columns:1fr}.picprev{width:100%;height:180px}}
+
+/* Dead marker */
+.tabrow{display:flex;align-items:flex-end;gap:12px;border-bottom:1px solid var(--line);margin:0 0 12px}
+.tabrow .tabs{border-bottom:0;margin:0;flex:1}
+.deadtoggle{display:inline-flex;align-items:center;gap:8px;min-height:40px;margin-bottom:6px;padding:0 12px;border:1px solid var(--line);border-radius:20px;cursor:pointer;font-weight:700;color:var(--muted);user-select:none}
+.deadtoggle input{width:20px;height:20px;accent-color:var(--accent);margin:0}
+.deadtoggle.on{border-color:var(--accent);color:var(--accent)}
+.deadbanner{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin:0 0 10px;padding:10px 16px;border-radius:6px;background:var(--accent);color:var(--accent-ink)}
+.deadbanner b{font:800 1.2rem var(--serif);letter-spacing:.02em}
+.statblock.dead h2{text-decoration:line-through;text-decoration-thickness:2px}
+.list li.isdead .nm{text-decoration:line-through;opacity:.7}
+.tag.deadtag{color:var(--danger);font-weight:700}
+.hidedead{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted);min-height:32px}
+.hidedead input{width:18px;height:18px;accent-color:var(--accent)}
+:root[data-theme="red"] .deadbanner{background:#fff;color:#000}
+:root[data-theme="red"] .deadtoggle.on{border-width:2px;color:#fff;border-color:#fff}
+
+.deadbanner span{font-family:var(--serif);font-style:italic;font-size:1.05rem}
+.deadbanner .deaddate{margin-left:auto;min-height:34px;padding:0 12px;background:transparent;border-color:currentColor;color:inherit;font-size:.88rem}

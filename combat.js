@@ -689,7 +689,7 @@ function renderAddList() {
       return ra - rb || a.name.localeCompare(b.name);
     }).slice(0, 60);
   document.querySelector('#addList').innerHTML = list.map(m => `<li>
-    <span class="nm">${esc(m.name)}</span><span class="meta">CR ${esc(m.cr)} · ${esc(m.source || '')}</span>
+    <span class="nm">${esc(m.name)}${m.dead ? ' <span class="tag deadtag">Dead</span>' : ''}</span><span class="meta">CR ${esc(m.cr)} · ${esc(m.source || '')}</span>
     <span class="addctl">
       <select aria-label="How many">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option>${n}</option>`).join('')}</select>
       <button class="btn primary" type="button" data-add="${esc(m.id)}">Add</button>
@@ -821,6 +821,6 @@ export function initCombat(helpers) {
     const m = ctx.getMonster(b.dataset.add); if (!m) return;
     const n = +b.closest('li').querySelector('select').value;
     addMonsterToCombat(m, n);
-    ctx.toast(`Added ${n} ${m.name}${n > 1 ? 's' : ''}`);
+    ctx.toast(`Added ${n} ${m.name}${n > 1 ? 's' : ''}${m.dead ? ". Heads up: it's marked as dead in your library." : ''}`);
   });
 }

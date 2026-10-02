@@ -84,6 +84,17 @@ function updateBadge() {
   badge.hidden = !n; badge.textContent = n;
 }
 
+// One-line text prompt; resolves with the text, or null if cancelled
+function promptBox(title, label, value = '', placeholder = '') {
+  const dlg = $('#promptDlg');
+  $('#promptTitle').textContent = title;
+  $('#promptLabel').textContent = label;
+  const inp = $('#promptInput'); inp.value = value; inp.placeholder = placeholder;
+  dlg.returnValue = '';
+  dlg.showModal(); inp.focus();
+  return new Promise(res => dlg.addEventListener('close', () => res(dlg.returnValue === 'ok' ? inp.value.trim() : null), { once: true }));
+}
+
 function averageFromFormula(f) {
   const m = String(f).replace(/\s+/g, '').match(/^(\d+)d(\d+)([+-]\d+)?$/i);
   if (!m) return null;
@@ -171,6 +182,7 @@ function filtered() {
     if (type && (m.type || '').toLowerCase() !== type) return false;
     if (src === '__mine' ? !(m.edited || !m.id.startsWith('srd-')) : (src && m.source !== src)) return false;
     if (size && m.size !== size) return false;
+    if (m.dead && $('#fHideDead').checked) return false;
     const c = crNum(m.cr);
     return c >= lo && c <= hi;
   });
@@ -190,7 +202,7 @@ function filtered() {
 
 function filtersActive() {
   return $('#q').value || $('#fType').value || $('#fSource').value || $('#fSize').value
-    || $('#fCrMin').value !== '0' || $('#fCrMax').value !== '30';
+    || $('#fCrMin').value !== '0' || $('#fCrMax').value !== '30' || $('#fHideDead').checked;
 }
 
 function renderList() {
@@ -199,8 +211,8 @@ function renderList() {
   $('#clearFilters').hidden = !filtersActive();
   listEl.innerHTML = items.map(m => {
     const mine = !m.id.startsWith('srd-');
-    const tag = mine ? '<span class="tag">Mine</span>' : m.edited ? '<span class="tag">Edited</span>' : '';
-    return `<li><button type="button" data-id="${esc(m.id)}" aria-current="${m.id === state.selectedId}">
+    const tag = (m.dead ? '<span class="tag deadtag">Dead</span>' : '') + (mine ? '<span class="tag">Mine</span>' : m.edited ? '<span class="tag">Edited</span>' : '');
+    return `<li${m.dead ? ' class="isdead"' : ''}><button type="button" data-id="${esc(m.id)}" aria-current="${m.id === state.selectedId}">
       <span class="nm">${esc(m.name)}${tag}</span>
       <span class="cr">${esc(m.cr)}<small>CR</small></span>
       <span class="meta">${esc(m.size)} ${esc(m.type)} · ${esc(m.source || 'No source')}</span>
@@ -248,9 +260,12 @@ function renderDetail() {
       ${isSrd && m.edited ? '<button class="btn" type="button" data-act="revert">Revert to SRD</button>' : ''}
       <button class="btn danger" type="button" data-act="delete">Delete</button>
     </div>
+    <div class="tabrow">
     <div class="tabs" role="tablist" aria-label="Monster page">
       <button type="button" role="tab" data-act="tab" data-tab="stats" aria-selected="${state.tab === 'stats'}">Stat block</button>
       <button type="button" role="tab" data-act="tab" data-tab="lore" aria-selected="${state.tab === 'lore'}">Lore${hasLore(m) ? '<span class="dot" aria-label="has content"></span>' : ''}</button>
+    </div>
+    <label class="deadtoggle${m.dead ? ' on' : ''}"><input type="checkbox" data-act="dead" ${m.dead ? 'checked' : ''}> Dead</label>
     </div>
     ${state.tab === 'lore' ? loreHtml(m) : `${statBlockHtml(m)}
     ${m.notes ? `<div class="notes">${fmt(m.notes)}</div>` : ''}`}
@@ -264,7 +279,7 @@ const hasLore = m => !!(m.description || m.tactics || m.image);
 function loreHtml(m) {
   if (!hasLore(m)) return `<div class="lore empty-lore"><p>No lore yet. Tap Edit to add a picture, combat tactics, or background for ${esc(m.name)}.</p></div>`;
   queueMicrotask(() => showImage(m, '#loreImg'));
-  return `<article class="lore">
+  return `${deadBanner(m)}<article class="lore">
     ${m.image ? `<figure class="lorepic"><button type="button" class="picbtn" data-act="bigpic" aria-label="View picture full size"><img id="loreImg" alt="${esc(m.name)}"></button></figure>` : ''}
     ${m.tactics ? `<section class="lorebox tactics"><h3>Tactics</h3><p class="desc">${fmt(m.tactics)}</p></section>` : ''}
     ${m.description ? `<section class="lorebox"><h3>Lore</h3><div class="desc">${fmt(m.description)}</div></section>` : ''}
@@ -354,6 +369,12 @@ function line(label, val) {
   return val ? `<p class="ln"><b>${label}</b> ${esc(val)}</p>` : '';
 }
 
+function deadBanner(m) {
+  if (!m.dead) return '';
+  return `<div class="deadbanner" role="status"><b>Dead</b>${m.dead.when ? `<span>${esc(m.dead.when)}</span>` : ''}
+    <button class="btn deaddate" type="button" data-act="deaddate">${m.dead.when ? 'Edit date' : 'Add date'}</button></div>`;
+}
+
 function statBlockHtml(m) {
   const sub = [m.size, m.type + (m.subtype ? ` (${m.subtype})` : '')].filter(Boolean).join(' ') + (m.alignment ? `, ${m.alignment}` : '');
   const sections = SECTIONS.slice(1).map(([k, label]) => {
@@ -363,7 +384,7 @@ function statBlockHtml(m) {
     const intro = introText ? `<p class="entry">${fmt(introText)}</p>` : '';
     return `<h3>${label.replace(/\b\w/g, c => c.toUpperCase())}</h3>${intro}${list.map(entryHtml).join('')}`;
   }).join('');
-  return `<article class="statblock" aria-label="${esc(m.name)} stat block">
+  return `${deadBanner(m)}<article class="statblock${m.dead ? ' dead' : ''}" aria-label="${esc(m.name)} stat block">
     <h2>${esc(m.name)}</h2>
     <p class="sub">${esc(sub)}</p>
     <hr class="taper">
@@ -565,7 +586,7 @@ async function onDetailAction(act, btn) {
   switch (act) {
     case 'back': history.length > 1 && isNarrow() ? history.back() : setView('list', false); break;
     case 'edit': openEditor(m); break;
-    case 'addcombat': addMonsterToCombat(m, 1); updateBadge(); toast(`Added ${m.name} to combat`); break;
+    case 'addcombat': addMonsterToCombat(m, 1); updateBadge(); toast(m.dead ? `Added ${m.name} to combat. Heads up: it's marked as dead in your library.` : `Added ${m.name} to combat`); break;
     case 'dup': {
       const c = structuredClone(m);
       c.id = ''; c.name = `${m.name} (copy)`; c.edited = false; c.created = 0; c.updated = 0;
@@ -639,6 +660,24 @@ async function onDetailAction(act, btn) {
       break;
     }
     case 'tab': state.tab = btn.dataset.tab; renderDetail(); break;
+    case 'deaddate': {
+      const when = await promptBox(`When did ${m.name} die?`, 'In-game date (leave blank for none)', m.dead.when || '', 'e.g. 13th of Solentide, 297');
+      if (when === null) return;
+      m.dead = { ...m.dead, when };
+      await saveMonster(m); renderDetail();
+      break;
+    }
+    case 'dead': {
+      if (!m.dead) {
+        const when = await promptBox(`Mark ${m.name} as dead`, 'In-game date (optional)', '', 'e.g. 13th of Solentide, 297');
+        if (when === null) { renderDetail(); return; }
+        m.dead = { at: now(), when };
+      } else m.dead = null;
+      await saveMonster(m);
+      renderList(); renderDetail();
+      toast(m.dead ? `${m.name} marked as dead` : `${m.name} is alive again`);
+      break;
+    }
     case 'bigpic': {
       const rec = await db.getImage(m.id); if (!rec) return;
       $('#bigImg').src = rec.data; $('#bigImg').alt = m.name; $('#picDlg').showModal();
@@ -747,10 +786,10 @@ async function storageInfo() {
 
 /* ---------- wiring ---------- */
 function wire() {
-  ['#q', '#fType', '#fSource', '#fSize', '#fSort', '#fCrMin', '#fCrMax'].forEach(s => $(s).addEventListener('input', renderList));
+  ['#q', '#fType', '#fSource', '#fSize', '#fSort', '#fCrMin', '#fCrMax', '#fHideDead'].forEach(s => $(s).addEventListener('input', renderList));
   $('#clearFilters').addEventListener('click', () => {
     $('#q').value = ''; ['#fType', '#fSource', '#fSize'].forEach(s => { $(s).value = ''; });
-    $('#fCrMin').value = '0'; $('#fCrMax').value = '30'; renderList();
+    $('#fCrMin').value = '0'; $('#fCrMax').value = '30'; $('#fHideDead').checked = false; renderList();
   });
   listEl.addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b) select(b.dataset.id); });
 
@@ -814,7 +853,9 @@ function wire() {
 
   // Enter in a dialog's text field shouldn't submit (and close) the dialog
   document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.matches('dialog input')) e.preventDefault();
+    if (e.key !== 'Enter' || !e.target.matches('dialog input')) return;
+    e.preventDefault();
+    if (e.target.id === 'promptInput') $('#promptDlg').close('ok'); // Enter saves a one-line prompt
   });
 
   // Android back button: detail → list
