@@ -14,8 +14,13 @@
 <div class="app" id="app" data-view="list">
   <header class="topbar">
     <h1>Bestiary</h1>
-    <button class="btn primary" id="newBtn" type="button">New monster</button>
-    <button class="btn" id="importBtn" type="button">Paste stat block</button>
+    <nav class="seg modes" aria-label="Section">
+      <button type="button" data-mode="library" aria-pressed="true">Library</button>
+      <button type="button" data-mode="combat" aria-pressed="false">Combat <span class="badge" id="combatBadge" hidden></span></button>
+    </nav>
+    <span class="spacer"></span>
+    <button class="btn primary libonly" id="newBtn" type="button">New monster</button>
+    <button class="btn libonly" id="importBtn" type="button">Paste stat block</button>
     <button class="btn icon" id="settingsBtn" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
@@ -48,6 +53,8 @@
 
     <main class="detailpane" id="detail"></main>
   </div>
+
+  <div class="combat" id="combatView" hidden></div>
 </div>
 
 <dialog id="importDlg">
@@ -111,6 +118,38 @@
       <button class="btn" value="no" type="submit">Cancel</button>
       <button class="btn primary" value="yes" type="submit" id="confirmYes"></button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="partyDlg">
+  <form class="dlg" method="dialog">
+    <h2>Party</h2>
+    <p class="hint" style="margin:0">Enter your players once. They join every combat, and their HP, conditions, and exhaustion carry over between fights until a long rest.</p>
+    <div id="partyBody" class="partybody"></div>
+    <div class="row" style="justify-content:space-between">
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" type="button" data-pa="add">Add player</button>
+        <button class="btn" type="button" data-pa="rest">Long rest</button>
+      </span>
+      <button class="btn primary" value="close" type="submit">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="addDlg">
+  <form class="dlg" method="dialog">
+    <h2>Add monsters</h2>
+    <input class="field" id="addQ" type="search" placeholder="Search your library" autocomplete="off" aria-label="Search your library">
+    <ul class="addlist" id="addList"></ul>
+    <div class="row"><button class="btn primary" value="close" type="submit">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="choiceDlg">
+  <form class="dlg" method="dialog">
+    <h2 id="choiceTitle"></h2>
+    <p id="choiceBody" style="margin:0"></p>
+    <div class="row" id="choiceBtns"></div>
   </form>
 </dialog>
 

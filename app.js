@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { parseStatBlock, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
 const SRD_VERSION = 1;
@@ -35,10 +36,11 @@ const uid = () => 'c-' + now().toString(36) + Math.random().toString(36).slice(2
 const isNarrow = () => matchMedia('(max-width:820px)').matches;
 
 function toast(msg) {
+  document.querySelectorAll('.toast').forEach(x => x.remove());
   const t = document.createElement('div');
   t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
   document.body.append(t);
-  setTimeout(() => t.remove(), 2600);
+  setTimeout(() => t.remove(), Math.max(2600, msg.length * 55));
 }
 
 function confirmBox(title, body, yesLabel) {
@@ -49,6 +51,34 @@ function confirmBox(title, body, yesLabel) {
   dlg.returnValue = '';
   dlg.showModal();
   return new Promise(res => dlg.addEventListener('close', () => res(dlg.returnValue === 'yes'), { once: true }));
+}
+
+// Multi-button prompt; resolves with the chosen value, or '' if cancelled
+function choice(title, body, buttons) {
+  const dlg = $('#choiceDlg');
+  $('#choiceTitle').textContent = title;
+  $('#choiceBody').textContent = body;
+  $('#choiceBtns').innerHTML = '<button class="btn" value="" type="submit">Cancel</button>'
+    + buttons.map(([v, label], i) => `<button class="btn ${i === buttons.length - 1 ? 'primary' : ''}" value="${esc(v)}" type="submit">${esc(label)}</button>`).join('');
+  dlg.returnValue = '';
+  dlg.showModal();
+  return new Promise(res => dlg.addEventListener('close', () => res(dlg.returnValue), { once: true }));
+}
+
+/* ---------- Library / Combat switch ---------- */
+let mode = 'library';
+function setMode(m) {
+  mode = m;
+  $('.main').hidden = m !== 'library';
+  $('#combatView').hidden = m !== 'combat';
+  document.querySelectorAll('.libonly').forEach(b => { b.hidden = m !== 'library'; });
+  document.querySelectorAll('.modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
+  if (m === 'combat') { $('#combatView').dataset.view = 'list'; renderCombat(); }
+}
+function updateBadge() {
+  const n = combatantCount();
+  const badge = $('#combatBadge');
+  badge.hidden = !n; badge.textContent = n;
 }
 
 function averageFromFormula(f) {
@@ -209,7 +239,8 @@ function renderDetail() {
     <div class="sb-actions">
       <button class="btn back" type="button" data-act="back">Back to list</button>
       <span class="spacer"></span>
-      <button class="btn primary" type="button" data-act="edit">Edit</button>
+      <button class="btn primary" type="button" data-act="addcombat">Add to combat</button>
+      <button class="btn" type="button" data-act="edit">Edit</button>
       <button class="btn" type="button" data-act="dup">Duplicate</button>
       ${isSrd && m.edited ? '<button class="btn" type="button" data-act="revert">Revert to SRD</button>' : ''}
       <button class="btn danger" type="button" data-act="delete">Delete</button>
@@ -450,6 +481,7 @@ async function onDetailAction(act, btn) {
   switch (act) {
     case 'back': history.length > 1 && isNarrow() ? history.back() : setView('list', false); break;
     case 'edit': openEditor(m); break;
+    case 'addcombat': addMonsterToCombat(m, 1); updateBadge(); toast(`Added ${m.name} to combat`); break;
     case 'dup': {
       const c = structuredClone(m);
       c.id = ''; c.name = `${m.name} (copy)`; c.edited = false; c.created = 0; c.updated = 0;
@@ -519,7 +551,7 @@ async function onDetailAction(act, btn) {
 async function exportBackup() {
   const all = await db.all();
   const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
-  const data = { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings };
+  const data = { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup() };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a');
   const d = new Date();
@@ -556,6 +588,7 @@ async function importBackup(file) {
   const parts = [`${added} added`, `${updated} updated`];
   if (kept) parts.push(`${kept} already up to date`);
   if (removed) parts.push(`${removed} removed`);
+  if (await mergePartyFromBackup(data.party)) parts.push('party updated');
   toast(`Backup loaded: ${parts.join(', ')}`);
 }
 
@@ -627,14 +660,21 @@ function wire() {
   });
   $('#spellSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings(); if (!state.editing) renderDetail();
+    state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings(); if (!state.editing) renderDetail(); renderCombat();
   });
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());
   $('#restoreFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; });
 
+  document.querySelector('.modes').addEventListener('click', e => {
+    const b = e.target.closest('button[data-mode]'); if (!b || b.dataset.mode === mode) return;
+    if (state.editing && state.dirty) return guardLeave(() => { state.editing = null; state.dirty = false; renderDetail(); setMode(b.dataset.mode); });
+    setMode(b.dataset.mode);
+  });
+
   // Android back button: detail → list
   window.addEventListener('popstate', () => {
+    if (mode === 'combat') { $('#combatView').dataset.view = 'list'; return; }
     if (state.editing && state.dirty) {
       history.pushState({ view: 'detail' }, '');
       guardLeave(() => { state.editing = null; state.dirty = false; renderDetail(); setView('list', false); });
@@ -650,8 +690,18 @@ function wire() {
 async function start() {
   initCrSelects();
   wire();
+  initCombat({
+    toast, confirmBox, choice, statBlockHtml,
+    getMonster: id => state.byId.get(id),
+    allMonsters: () => state.monsters,
+    settings: () => state.settings,
+    onChange: updateBadge,
+    pushDetail: () => { if (isNarrow()) history.pushState({ view: 'cdetail' }, ''); },
+  });
   try {
     await loadAll();
+    await loadCombat();
+    updateBadge();
   } catch (err) {
     detailEl.innerHTML = `<div class="empty"><h2>The library couldn't load</h2><p>${esc(err.message)}. Reload the page; if it keeps happening, load your latest backup file.</p></div>`;
     return;
