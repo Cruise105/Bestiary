@@ -246,7 +246,7 @@ function renderDetail() {
       <button class="btn danger" type="button" data-act="delete">Delete</button>
     </div>
     ${statBlockHtml(m)}
-    ${m.notes ? `<div class="notes">${esc(m.notes)}</div>` : ''}
+    ${m.notes ? `<div class="notes">${fmt(m.notes)}</div>` : ''}
     <p class="sb-foot">${esc(m.source || 'No source')}${m.tags ? ` · Tags: ${esc(m.tags)}` : ''}${m.updated ? ` · Edited ${new Date(m.updated).toLocaleDateString()}` : ''}</p>
   </div>`;
 }
@@ -291,8 +291,15 @@ function traitsHtml(m) {
   return '<hr class="taper">' + parts.join('');
 }
 
+// Light formatting you can type: *italic* and **bold**
+function fmt(text) {
+  return esc(text)
+    .replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, '<b>$1</b>')
+    .replace(/\*(?=\S)([^*\n]+?)(?<=\S)\*/g, '<i>$1</i>');
+}
+
 function entryHtml(e) {
-  const desc = esc(e.desc)
+  const desc = fmt(e.desc)
     .replace(/^(Melee or Ranged Weapon Attack:|Melee Weapon Attack:|Ranged Weapon Attack:|Melee Spell Attack:|Ranged Spell Attack:)/, '<i>$1</i>')
     .replace(/\bHit:/g, '<i>Hit:</i>');
   return `<p class="entry"><i>${esc(e.name)}.</i> <span class="desc">${desc}</span></p>`;
@@ -307,7 +314,7 @@ function statBlockHtml(m) {
   const sections = SECTIONS.slice(1).map(([k, label]) => {
     const list = m[k] || [];
     if (!list.length) return '';
-    const intro = k === 'legendary' && m.legendaryIntro ? `<p class="entry">${esc(m.legendaryIntro)}</p>` : '';
+    const intro = k === 'legendary' && m.legendaryIntro ? `<p class="entry">${fmt(m.legendaryIntro)}</p>` : '';
     return `<h3>${label.replace(/\b\w/g, c => c.toUpperCase())}</h3>${intro}${list.map(entryHtml).join('')}`;
   }).join('');
   return `<article class="statblock" aria-label="${esc(m.name)} stat block">
@@ -331,7 +338,7 @@ function statBlockHtml(m) {
     <p class="ln"><b>Challenge</b> ${esc(m.cr)} (${Number(m.xp || 0).toLocaleString()} XP) &nbsp; <b>Proficiency Bonus</b> +${esc(m.pb)}</p>
     ${traitsHtml(m)}
     ${sections}
-    ${m.description ? `<h3>Description</h3><p class="desc">${esc(m.description)}</p>` : ''}
+    ${m.description ? `<h3>Description</h3><p class="desc">${fmt(m.description)}</p>` : ''}
   </article>`;
 }
 
@@ -389,6 +396,7 @@ function renderEditor() {
       ${inp('pb', 'Proficiency bonus', m.pb, 'type="number" inputmode="numeric" min="0"')}
     </div></fieldset>
 
+    <p class="hint">For italics, select words in a description and tap <b><i>I</i></b>, or type *asterisks* around them. Double asterisks make **bold**.</p>
     ${SECTIONS.map(([k, label]) => `<fieldset><legend>${label}</legend>
       ${k === 'legendary' ? `<div class="grid" style="margin-bottom:10px">
         ${inp('legendaryCount', 'Legendary actions per round', m.legendaryCount, 'type="number" inputmode="numeric" min="0"')}
@@ -427,6 +435,7 @@ function entryRow(sec, e, i, n) {
   return `<div class="entryrow" data-i="${i}">
     <input class="field" data-e="name" value="${esc(e.name)}" placeholder="Name, e.g. Bite or Fire Breath (Recharge 5–6)" aria-label="Name">
     <span class="ctl">
+      <button class="btn icon fmtbtn" type="button" data-act="italic" aria-label="Italicize selected text" title="Italicize selected text">I</button>
       <button class="btn icon" type="button" data-act="up" data-sec="${sec}" data-i="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
       <button class="btn icon" type="button" data-act="down" data-sec="${sec}" data-i="${i}" ${i === n - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
       <button class="btn icon danger" type="button" data-act="remove" data-sec="${sec}" data-i="${i}" aria-label="Remove">×</button>
@@ -533,6 +542,17 @@ async function onDetailAction(act, btn) {
       state.dirty = true;
       const y = detailEl.scrollTop; renderEditor(); detailEl.scrollTop = y;
       if (act === 'add') { const rows = detailEl.querySelectorAll(`.entrylist[data-sec="${k}"] .entryrow`); rows[rows.length - 1]?.querySelector('input').focus(); }
+      break;
+    }
+    case 'italic': {
+      const ta = btn.closest('.entryrow').querySelector('textarea');
+      const { selectionStart: s, selectionEnd: e2, value: v } = ta;
+      if (s === e2) { toast('Select the words to italicize first.'); ta.focus(); return; }
+      const sel = v.slice(s, e2).trim();
+      const lead = v.slice(s, e2).indexOf(sel);
+      ta.value = v.slice(0, s + lead) + `*${sel}*` + v.slice(s + lead + sel.length);
+      ta.focus(); ta.setSelectionRange(s + lead, s + lead + sel.length + 2);
+      state.dirty = true;
       break;
     }
     case 'detectsc': {

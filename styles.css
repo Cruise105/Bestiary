@@ -1,6 +1,7 @@
 @font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-400-normal.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-400-italic.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
 @font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-700-normal.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-700-italic.woff2) format("woff2");font-weight:700;font-style:italic;font-display:swap}
 @font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-800-normal.woff2) format("woff2");font-weight:800;font-display:swap}
 @font-face{font-family:"Alegreya Sans";src:url(fonts/alegreya-sans-latin-400-normal.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Alegreya Sans";src:url(fonts/alegreya-sans-latin-400-italic.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
@@ -95,7 +96,9 @@ textarea.field{min-height:88px;resize:vertical;line-height:1.4}
 .abilities span{font-variant-numeric:tabular-nums}
 .statblock h3{font:700 1.4rem/1.2 var(--serif);color:var(--accent);margin:18px 0 6px;padding-bottom:2px;border-bottom:1px solid var(--accent)}
 .statblock p.entry{margin:0 0 8px}
-.statblock p.entry > i:first-child{font-weight:700}
+.statblock p.entry > i:first-child{font-weight:700;font-style:italic}
+.notes i,.statblock .desc i{font-style:italic}
+.fmtbtn{font-style:italic;font-family:var(--serif);font-weight:700}
 .statblock .desc{white-space:pre-line}
 .statblock ul.spells{margin:4px 0 8px 1.1em;padding:0}
 .sb-foot{color:var(--muted);font-size:.9rem;margin-top:12px;font-family:var(--sans)}
