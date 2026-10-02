@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, partyForBackup, mergePartyFromBackup } from './combat.js';
-import { parseStatBlock, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
+import { blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
 const SRD_VERSION = 1;
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
@@ -231,7 +231,7 @@ function renderDetail() {
   const m = state.byId.get(state.selectedId);
   if (!m) {
     detailEl.innerHTML = `<div class="empty"><h2>Pick a monster</h2>
-      <p>Search or filter on the left, or add your own with New monster or Paste stat block.</p></div>`;
+      <p>Search or filter on the left, or add your own with New monster.</p></div>`;
     return;
   }
   const isSrd = m.id.startsWith('srd-');
@@ -659,17 +659,6 @@ function wire() {
     const m = blankMonster(); m.source = 'Homebrew';
     const go = () => openEditor(m, { isNew: true });
     state.editing && state.dirty ? guardLeave(go) : go();
-  });
-
-  const importDlg = $('#importDlg');
-  $('#importBtn').addEventListener('click', () => { $('#importText').value = ''; importDlg.showModal(); $('#importText').focus(); });
-  importDlg.addEventListener('close', () => {
-    if (importDlg.returnValue !== 'parse') return;
-    const text = $('#importText').value.trim();
-    if (!text) return;
-    const m = parseStatBlock(text, $('#importSource').value.trim());
-    openEditor(m, { isNew: true });
-    toast('Check each field, then save.');
   });
 
   const setDlg = $('#settingsDlg');

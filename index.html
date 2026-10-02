@@ -20,7 +20,6 @@
     </nav>
     <span class="spacer"></span>
     <button class="btn primary libonly" id="newBtn" type="button">New monster</button>
-    <button class="btn libonly" id="importBtn" type="button">Paste stat block</button>
     <button class="btn icon" id="settingsBtn" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
@@ -56,21 +55,6 @@
 
   <div class="combat" id="combatView" hidden></div>
 </div>
-
-<dialog id="importDlg">
-  <form class="dlg" method="dialog" id="importForm">
-    <h2>Paste a stat block</h2>
-    <p class="hint">Photograph the book page, copy the text (Samsung's text extraction or Google Lens), and paste it here. Everything lands in the editor so you can fix anything the photo scrambled before saving.</p>
-    <textarea class="field" id="importText" rows="12" placeholder="Ice Troll&#10;Large giant, chaotic evil&#10;Armor Class 15 (natural armor)&#10;Hit Points …"></textarea>
-    <label class="f">Source book (optional)
-      <input class="field" id="importSource" list="sourceList" placeholder="e.g. Rime of the Frostmaiden">
-    </label>
-    <div class="row">
-      <button class="btn" value="cancel" type="submit">Cancel</button>
-      <button class="btn primary" value="parse" type="submit" id="parseBtn">Review in editor</button>
-    </div>
-  </form>
-</dialog>
 
 <dialog id="settingsDlg">
   <form class="dlg" method="dialog">
