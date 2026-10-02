@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#141a22">
+<title>Bestiary</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app" data-view="list">
+  <header class="topbar">
+    <h1>Bestiary</h1>
+    <button class="btn primary" id="newBtn" type="button">New monster</button>
+    <button class="btn" id="importBtn" type="button">Paste stat block</button>
+    <button class="btn icon" id="settingsBtn" type="button" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="main">
+    <aside class="listpane" aria-label="Monster list">
+      <div class="search">
+        <input class="field" id="q" type="search" placeholder="Search monsters" autocomplete="off" aria-label="Search monsters">
+        <div class="filters">
+          <select id="fType" aria-label="Creature type"><option value="">All types</option></select>
+          <select id="fSource" aria-label="Source"><option value="">All sources</option></select>
+          <select id="fSize" aria-label="Size"><option value="">All sizes</option></select>
+          <select id="fSort" aria-label="Sort by">
+            <option value="name">Sort by name</option>
+            <option value="cr">Sort by CR</option>
+            <option value="updated">Recently edited</option>
+          </select>
+          <div class="crrange">
+            <span>CR</span>
+            <select id="fCrMin" aria-label="Minimum CR"></select>
+            <span>to</span>
+            <select id="fCrMax" aria-label="Maximum CR"></select>
+          </div>
+        </div>
+      </div>
+      <div class="count"><span id="count"></span><button id="clearFilters" type="button" hidden>Clear filters</button></div>
+      <ul class="list" id="list"></ul>
+    </aside>
+
+    <main class="detailpane" id="detail"></main>
+  </div>
+</div>
+
+<dialog id="importDlg">
+  <form class="dlg" method="dialog" id="importForm">
+    <h2>Paste a stat block</h2>
+    <p class="hint">Photograph the book page, copy the text (Samsung's text extraction or Google Lens), and paste it here. Everything lands in the editor so you can fix anything the photo scrambled before saving.</p>
+    <textarea class="field" id="importText" rows="12" placeholder="Ice Troll&#10;Large giant, chaotic evil&#10;Armor Class 15 (natural armor)&#10;Hit Points …"></textarea>
+    <label class="f">Source book (optional)
+      <input class="field" id="importSource" list="sourceList" placeholder="e.g. Rime of the Frostmaiden">
+    </label>
+    <div class="row">
+      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <button class="btn primary" value="parse" type="submit" id="parseBtn">Review in editor</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form class="dlg" method="dialog">
+    <h2>Settings</h2>
+    <div class="set">
+      <h3>Display</h3>
+      <div class="seg" id="themeSeg" role="group" aria-label="Display mode">
+        <button type="button" data-theme="day">Day</button>
+        <button type="button" data-theme="night">Night</button>
+        <button type="button" data-theme="red">Red light</button>
+      </div>
+      <p>Red light drops color entirely and uses bold white-on-black so everything stays readable under your combat lighting.</p>
+    </div>
+    <div class="set">
+      <h3>Spellcasting at the table</h3>
+      <div class="seg" id="spellSeg" role="group" aria-label="Spell tracking">
+        <button type="button" data-spell="slots">Spell slots</button>
+        <button type="button" data-spell="points">Spell points</button>
+      </div>
+      <p>Applies to every caster in the combat tracker. Spell points use your house rule for 5th-level and higher spells.</p>
+    </div>
+    <div class="set">
+      <h3>Backup and transfer</h3>
+      <div class="row" style="justify-content:flex-start">
+        <button class="btn" type="button" id="exportBtn">Save backup file</button>
+        <button class="btn" type="button" id="restoreBtn">Load backup file</button>
+        <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+      </div>
+      <p>A backup holds every monster you've created or edited. Loading one merges it in: new monsters are added, and when the same monster exists on both devices, the most recently edited version wins. Nothing else is removed.</p>
+    </div>
+    <div class="set">
+      <h3>Storage</h3>
+      <p id="storageInfo">Checking storage…</p>
+    </div>
+    <p class="hint" style="margin:0">Includes material from the System Reference Document 5.1 by Wizards of the Coast LLC, licensed under CC BY 4.0. Fonts: Alegreya and Alegreya Sans (SIL Open Font License).</p>
+    <div class="row"><button class="btn primary" value="close" type="submit">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="confirmDlg">
+  <form class="dlg" method="dialog">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmBody" style="margin:0"></p>
+    <div class="row">
+      <button class="btn" value="no" type="submit">Cancel</button>
+      <button class="btn primary" value="yes" type="submit" id="confirmYes"></button>
+    </div>
+  </form>
+</dialog>
+
+<datalist id="sourceList"></datalist>
+<script type="module" src="app.js"></script>
+</body>
+</html>
