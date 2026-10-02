@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { initSync } from './sync.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
 import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
@@ -573,24 +574,15 @@ async function onDetailAction(act, btn) {
 }
 
 /* ---------- backup ---------- */
-async function exportBackup() {
+// Everything worth carrying between devices (also what Drive sync stores)
+async function buildBackupData() {
   const all = await db.all();
   const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
-  const data = { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const a = document.createElement('a');
-  const d = new Date();
-  a.href = URL.createObjectURL(blob);
-  a.download = `bestiary-backup-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast(`Saved backup with ${mine.length} monster${mine.length === 1 ? '' : 's'}`);
+  return { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
 }
 
-async function importBackup(file) {
-  let data;
-  try { data = JSON.parse(await file.text()); } catch { return toast('That file is not a bestiary backup.'); }
-  if (data?.app !== 'bestiary' || !Array.isArray(data.monsters)) return toast('That file is not a bestiary backup.');
+// Merge another device's data in; newest edit wins. Returns a short summary.
+async function mergeBackupData(data) {
   const existing = new Map((await db.all()).map(m => [m.id, m]));
   let added = 0, updated = 0, kept = 0, removed = 0;
   const toPut = [];
@@ -608,15 +600,37 @@ async function importBackup(file) {
     if (!state.deletedSrd.some(x => x.id === d.id)) state.deletedSrd.push(d);
   }
   await db.setMeta('deletedSrd', state.deletedSrd);
-  setMonsters(await db.all());
-  renderDetail();
-  const parts = [`${added} added`, `${updated} updated`];
-  if (kept) parts.push(`${kept} already up to date`);
-  if (removed) parts.push(`${removed} removed`);
-  if (await mergePartyFromBackup(data.party)) parts.push('party updated');
+  const partyChanged = await mergePartyFromBackup(data.party);
   const encN = await mergeEncountersFromBackup(data.encounters);
+  if (added || updated || removed) { setMonsters(await db.all()); if (!state.editing) renderDetail(); }
+  if (partyChanged || encN) renderCombat();
+  const parts = [];
+  if (added) parts.push(`${added} monster${added === 1 ? '' : 's'} added`);
+  if (updated) parts.push(`${updated} updated`);
+  if (removed) parts.push(`${removed} removed`);
+  if (partyChanged) parts.push('party updated');
   if (encN) parts.push(`${encN} encounter${encN === 1 ? '' : 's'} updated`);
-  toast(`Backup loaded: ${parts.join(', ')}`);
+  return { parts, kept, changed: parts.length > 0 };
+}
+
+async function exportBackup() {
+  const data = await buildBackupData();
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = URL.createObjectURL(blob);
+  a.download = `bestiary-backup-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Saved backup with ${data.monsters.length} monster${data.monsters.length === 1 ? '' : 's'}`);
+}
+
+async function importBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { return toast('That file is not a bestiary backup.'); }
+  if (data?.app !== 'bestiary' || !Array.isArray(data.monsters)) return toast('That file is not a bestiary backup.');
+  const r = await mergeBackupData(data);
+  toast(r.changed ? `Backup loaded: ${r.parts.join(', ')}` : 'Backup loaded: everything was already up to date.');
 }
 
 /* ---------- settings ---------- */
@@ -742,6 +756,7 @@ async function start() {
     await loadCombat();
     await loadEncounters();
     updateBadge();
+    initSync({ toast, build: buildBackupData, merge: mergeBackupData });
   } catch (err) {
     detailEl.innerHTML = `<div class="empty"><h2>The library couldn't load</h2><p>${esc(err.message)}. Reload the page; if it keeps happening, load your latest backup file.</p></div>`;
     return;

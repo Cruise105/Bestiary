@@ -20,6 +20,10 @@
     </nav>
     <span class="spacer"></span>
     <button class="btn primary libonly" id="newBtn" type="button">New monster</button>
+    <button class="btn syncbtn" id="syncBtn" type="button" hidden data-state="off">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 9.1 4 4 0 0 0 6.5 19z"/></svg>
+      <span class="syncword">Synced</span>
+    </button>
     <button class="btn icon" id="settingsBtn" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
@@ -91,6 +95,10 @@
         <button type="button" data-hp="cr">Random by CR</button>
       </div>
       <p>Random by CR gives each monster that joins a fight its own HP from the DMG's hit point range for its challenge rating, so two of the same monster can differ. Stat blocks themselves don't change.</p>
+    </div>
+    <div class="set">
+      <h3>Google Drive sync</h3>
+      <div id="syncInfo" class="syncinfo"></div>
     </div>
     <div class="set">
       <h3>Backup and transfer</h3>

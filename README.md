@@ -27,9 +27,15 @@ Settings (gear icon) → **Save backup file** on one device, put the file in Goo
 
 Save a backup now and then even if you only use the tablet. Everything lives on the device, so the backup file is your safety net.
 
+## Google Drive sync
+
+Settings → **Google Drive sync** → **Connect Google Drive**, once on each device. After that the app syncs on its own when it opens, when you switch away from it, and a few seconds after changes. The cloud button in the top bar shows the status; tap it to sync right away. Every so often Google asks you to sign in again; the button says **Sign in** when that happens.
+
+The manual backup file still works as a safety net.
+
 ## Updating the app later
 
-When I send you new files, upload them to the same repository the same way (files with the same names replace the old ones). Give GitHub a minute or two, then open the app while online. It downloads the update and refreshes itself within a few seconds. Your monsters are not touched by updates.
+When I send you new files, upload them to the same repository the same way (files with the same names replace the old ones). Give GitHub a minute or two, then open the app while online. It downloads the update and refreshes itself within a few seconds. Your monsters are not touched by updates. On the PC, if an update doesn't show up, press **Ctrl+Shift+R**.
 
 ## Credits
 
