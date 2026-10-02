@@ -54,7 +54,7 @@ export async function mergePartyFromBackup(p) {
   render();
   return true;
 }
-export function combatantCount() { return cs.enc.combatants.length; }
+export function combatantCount() { return cs.enc.combatants.filter(c => c.kind !== 'lair').length; }
 export function monsterCount() { return cs.enc.combatants.filter(c => c.kind === 'monster').length; }
 // Current monsters as [{id, count}] for saving an encounter
 export function monsterCounts() {
@@ -67,7 +67,7 @@ export function monsterCounts() {
 }
 export function clearMonsters() {
   cs.enc.combatants = cs.enc.combatants.filter(c => c.kind === 'pc');
-  cs.enc.started = false; cs.enc.round = 0; cs.enc.turn = -1; cs.enc.loaded = null;
+  cs.enc.started = false; cs.enc.round = 0; cs.enc.turn = -1; cs.enc.loaded = null; cs.enc.noLair = [];
   cs.sel = null; persist();
 }
 export function setLoaded(enc, added) {
@@ -83,6 +83,7 @@ const rec = c => (c.kind === 'pc' ? pc(c.pcId) : c) || c;
 const nameOf = c => rec(c).name || c.name;
 const selected = () => cs.enc.combatants.find(c => c.cid === cs.sel);
 const isDown = c => c.kind === 'monster' && rec(c).hp <= 0;
+const usedRecharges = c => (c.uses || []).filter(u => u.kind === 'recharge' && u.used);
 
 function newPc() {
   return { id: uid(), name: '', ac: 10, maxHp: 10, hp: 10, temp: 0, passive: 10, conds: [], exh: 0,
@@ -94,6 +95,42 @@ function saveBonus(m, abil) {
   const hit = (m.saves || '').match(re);
   if (hit) return +hit[1];
   return modOf(m[abil.toLowerCase()] ?? 10);
+}
+
+// Limited-use abilities found in entry names: (Recharge 5–6), (3/Day), (Recharges after a Short or Long Rest)
+function buildUses(m) {
+  const out = [];
+  for (const sec of ['traits', 'actions', 'bonusActions', 'reactions', 'legendary']) {
+    (m[sec] || []).forEach((e, i) => {
+      const n = e.name || '';
+      if (/^legendary resistance/i.test(n)) return;
+      const base = n.replace(/\s*\([^)]*\)\s*$/, '').trim() || n;
+      const key = `${sec}:${i}`;
+      let x;
+      if ((x = n.match(/\(Recharge (\d)(?:\s*[–—-]\s*6)?\)/i))) out.push({ key, name: base, kind: 'recharge', min: +x[1], used: false });
+      else if ((x = n.match(/\(Recharges? after a ((?:Short or )?Long|Short) Rest\)/i))) out.push({ key, name: base, kind: 'rest', rest: x[1].toLowerCase(), used: false });
+      else if ((x = n.match(/\((\d+)\s*\/\s*Day(?: each)?\)/i))) out.push({ key, name: base, kind: 'perday', max: +x[1], usedN: 0 });
+    });
+  }
+  return out;
+}
+
+function lairFor(m) {
+  return { cid: uid(), kind: 'lair', ownerId: m.id, name: `${m.name}: lair actions`, init: 20, bonus: -100, lastUsed: null };
+}
+
+// Lair actions join automatically for any monster in the fight that has them, and leave with it
+function ensureLairs() {
+  const owners = new Set(cs.enc.combatants.filter(c => c.kind === 'monster').map(c => c.monsterId));
+  cs.enc.combatants = cs.enc.combatants.filter(c => c.kind !== 'lair' || owners.has(c.ownerId));
+  for (const id of owners) {
+    const m = ctx.getMonster(id);
+    if ((cs.enc.noLair || []).includes(id)) continue;
+    if (m && (m.lair || []).length && !cs.enc.combatants.some(c => c.kind === 'lair' && c.ownerId === id)) {
+      cs.enc.combatants.push(lairFor(m));
+      if (cs.enc.started) sortOrder();
+    }
+  }
 }
 
 function fromMonster(m, n) {
@@ -108,6 +145,7 @@ function fromMonster(m, n) {
     legMax: +m.legendaryCount || 0, legUsed: 0, lrMax: +m.legendaryResistance || 0, lrUsed: 0,
     caster: sc ? { abil: sc.ability || '', save: sc.ability ? saveBonus(m, sc.ability) : 0, level: lvl, spMax: SP_POOL[lvl], spUsed: 0, free: { 5: 0, 6: 0 }, slots, log: [] } : null,
     xp: +m.xp || 0,
+    uses: buildUses(m),
   };
 }
 
@@ -155,6 +193,8 @@ function startCombat() {
 function beginTurn(c) {
   // Legendary actions and reactions come back at the start of a creature's own turn
   c.legUsed = 0; c.react = false;
+  const due = usedRecharges(c);
+  if (due.length && !isDown(c)) ctx.toast(`${c.name}: roll to recharge ${due.map(u => `${u.name} (${u.min === 6 ? '6' : `${u.min}–6`})`).join(', ')}.`);
 }
 
 function nextTurn(dir = 1) {
@@ -270,6 +310,9 @@ const pips = (n, used, act, extra = '', label = '') =>
 export function render() {
   if (!root) return;
   ensurePartyInEncounter();
+  ensureLairs();
+  // Older saved fights: add ability tracking to monsters that don't have it yet
+  cs.enc.combatants.forEach(c => { if (c.kind === 'monster' && !c.uses) { const m = ctx.getMonster(c.monsterId); c.uses = m ? buildUses(m) : []; } });
   const e = cs.enc;
   if (!cs.sel && e.combatants.length) cs.sel = e.combatants[0].cid;
   root.innerHTML = `
@@ -297,9 +340,18 @@ export function render() {
 function rowHtml(c, i) {
   const r = rec(c); const e = cs.enc;
   const cur = e.started && i === e.turn;
+  if (c.kind === 'lair') {
+    return `<li class="crow lair" ${cur ? 'aria-current="step"' : ''} ${c.cid === cs.sel ? 'data-sel="1"' : ''}>
+      <button type="button" class="cpick" data-c="sel" data-cid="${c.cid}">
+        <span class="turnmark" aria-hidden="true">${cur ? '▶' : ''}</span>
+        <span class="cinit">20</span>
+        <span class="cname">${esc(c.name)}</span>
+        <span class="cac"></span><span class="chp"><i>${c.lastUsed ? `used round ${c.lastUsed.round}` : 'lair'}</i></span>
+      </button></li>`;
+  }
   const hpPct = r.maxHp ? Math.max(0, Math.min(100, Math.round(r.hp / r.maxHp * 100))) : 0;
   const state = r.exh >= 6 ? 'dead' : (r.hp <= 0 ? (c.kind === 'pc' ? 'dying' : 'down') : '');
-  const chips = [...(r.conds || []), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : ''].filter(Boolean);
+  const chips = [...(r.conds || []), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : '', ...usedRecharges(c).map(u => `${u.name} spent`)].filter(Boolean);
   return `<li class="crow ${c.kind} ${state}" ${cur ? 'aria-current="step"' : ''} ${c.cid === cs.sel ? 'data-sel="1"' : ''}>
     <button type="button" class="cpick" data-c="sel" data-cid="${c.cid}">
       <span class="turnmark" aria-hidden="true">${cur ? '▶' : ''}</span>
@@ -319,6 +371,7 @@ function detailHtml() {
   if (!c) return `<div class="empty"><h2>Run a fight</h2><p>Your party joins every combat automatically. Add monsters, enter everyone's initiative, then Start combat.</p></div>`;
   const r = rec(c); const e = cs.enc;
   const sections = [];
+  if (c.kind === 'lair') return lairDetailHtml(c);
 
   sections.push(`<div class="dhead">
     <button class="btn back" type="button" data-c="back">Back to order</button>
@@ -358,6 +411,17 @@ function detailHtml() {
     sections.push(`<div class="dbox"><h3>Actions</h3>${bits.join('')}<p class="note">Reaction and legendary actions come back at the start of its turn.</p></div>`);
   }
 
+  // Limited-use abilities
+  if (c.kind === 'monster' && (c.uses || []).length) {
+    sections.push(`<div class="dbox"><h3>Limited abilities</h3>${c.uses.map((u, ui) => {
+      if (u.kind === 'perday') return `<div class="pipsrow"><span>${esc(u.name)} <small class="note">${u.max}/day</small></span>${pips(u.max, u.usedN, 'useday', `data-u="${ui}"`, `${u.name} use`)}</div>`;
+      const when = u.kind === 'recharge' ? `recharges on ${u.min === 6 ? 'a 6' : `${u.min}–6`}` : `back after a ${u.rest} rest`;
+      return `<div class="pipsrow"><span>${esc(u.name)} <small class="note">${when}</small></span>
+        <button class="btn ${u.used ? '' : 'primary'} usebtn" type="button" data-c="usetoggle" data-u="${ui}">${u.used ? (u.kind === 'recharge' ? 'Spent · tap when recharged' : 'Spent') : 'Ready · tap when used'}</button></div>`;
+    }).join('')}
+    ${c.uses.some(u => u.kind === 'recharge') ? '<p class="note">At the start of its turn you get a reminder to roll for anything spent.</p>' : ''}</div>`);
+  }
+
   // Conditions
   sections.push(`<div class="dbox"><h3>Conditions</h3>
     <div class="condgrid">${CONDITIONS.map(k => `<button type="button" class="cond${(r.conds || []).includes(k) ? ' on' : ''}" data-c="cond" data-k="${k}" aria-pressed="${(r.conds || []).includes(k)}">${k}</button>`).join('')}
@@ -385,6 +449,22 @@ function detailHtml() {
   }
   sections.push(`<div class="drow"><button class="btn danger" type="button" data-c="remove">${c.kind === 'pc' ? 'Sit out this combat' : 'Remove from combat'}</button></div>`);
   return sections.join('');
+}
+
+function lairDetailHtml(c) {
+  const m = ctx.getMonster(c.ownerId);
+  const e = cs.enc;
+  const list = m?.lair || [];
+  const blocked = c.lastUsed && c.lastUsed.round === e.round - 1 ? c.lastUsed.i : -1;
+  return `<div class="dhead"><button class="btn back" type="button" data-c="back">Back to order</button>
+      <h2>${esc(c.name)}</h2><p class="dsub">Initiative 20, losing ties. Tap the one you use this round.</p></div>
+    ${m?.lairIntro ? `<div class="dbox"><p style="margin:0">${esc(m.lairIntro)}</p></div>` : ''}
+    <div class="dbox lairlist">${list.map((a, i) => {
+      const usedNow = c.lastUsed && c.lastUsed.round === e.round && c.lastUsed.i === i;
+      return `<button type="button" class="lairopt${usedNow ? ' on' : ''}" data-c="lairuse" data-i="${i}" ${i === blocked ? 'disabled' : ''}>
+        <b><i>${esc(a.name)}.</i></b> ${esc(a.desc)}${i === blocked ? '<span class="note"> Used last round, so it can’t repeat this round.</span>' : ''}</button>`;
+    }).join('') || '<p class="note">This monster has no lair actions listed.</p>'}</div>
+    <div class="drow"><button class="btn danger" type="button" data-c="remove">Remove lair actions</button></div>`;
 }
 
 function monsterSpellsHtml(c) {
@@ -509,6 +589,13 @@ function onClick(e) {
     case 'conc': r.conc = !r.conc; break;
     case 'exh': r.exh = Math.max(0, Math.min(6, r.exh + +b.dataset.d)); if (+b.dataset.d > 0) exhaustionToast(c); break;
     case 'react': c.react = !c.react; break;
+    case 'usetoggle': { const u = c.uses[+b.dataset.u]; u.used = !u.used; break; }
+    case 'useday': { const u = c.uses[+b.dataset.u]; u.usedN = toggleCount(u.usedN, i); break; }
+    case 'lairuse': {
+      const same = c.lastUsed && c.lastUsed.round === cs.enc.round && c.lastUsed.i === i;
+      c.lastUsed = same ? null : { round: cs.enc.round, i };
+      break;
+    }
     case 'leg': c.legUsed = toggleCount(c.legUsed, i); break;
     case 'lr': c.lrUsed = toggleCount(c.lrUsed, i); break;
     case 'ds': r.death.s = toggleCount(r.death.s, i); break;
@@ -522,6 +609,7 @@ function onClick(e) {
       const idx = cs.enc.combatants.findIndex(x => x.cid === c.cid);
       cs.enc.combatants.splice(idx, 1);
       if (c.kind === 'pc') cs.enc.sitOut = [...(cs.enc.sitOut || []), c.pcId];
+      if (c.kind === 'lair') cs.enc.noLair = [...(cs.enc.noLair || []), c.ownerId];
       if (idx < cs.enc.turn) cs.enc.turn--;
       if (cs.enc.turn >= cs.enc.combatants.length) cs.enc.turn = 0;
       cs.sel = null; root.dataset.view = 'list';

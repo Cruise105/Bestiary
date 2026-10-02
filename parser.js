@@ -12,7 +12,7 @@ export function blankMonster() {
     saves: '', skills: '', vulnerabilities: '', resistances: '', immunities: '', conditionImmunities: '',
     senses: 'passive Perception 10', languages: '—', cr: '0', xp: 0, pb: 2,
     traits: [], actions: [], bonusActions: [], reactions: [],
-    legendaryCount: 0, legendaryIntro: '', legendary: [], legendaryResistance: 0,
+    legendaryCount: 0, legendaryIntro: '', legendary: [], legendaryResistance: 0, lairIntro: '', lair: [],
     spellcasting: null, description: '', notes: '', tags: '',
   };
 }

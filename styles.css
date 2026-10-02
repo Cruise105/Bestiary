@@ -305,3 +305,13 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .cnote b{font-family:var(--serif);margin-right:6px}
 #encDlg{width:min(760px,calc(100vw - 32px))}
 :root[data-theme="red"] .cnote{background:#000;border-bottom-width:2px}
+
+/* Limited abilities + lair */
+.pipsrow small.note{margin:0 0 0 6px;display:inline}
+.usebtn{min-height:44px}
+.lairlist{display:grid;gap:8px}
+.lairopt{text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);cursor:pointer;font-family:var(--serif);line-height:1.45}
+.lairopt.on{border:2px solid var(--accent);background:var(--accent-soft)}
+.lairopt:disabled{opacity:.5;cursor:not-allowed}
+.crow.lair .cname{font-style:italic}
+:root[data-theme="red"] .lairopt.on{border-width:3px;background:#000}

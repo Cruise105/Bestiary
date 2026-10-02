@@ -9,7 +9,7 @@ const CRS = ['0', '1/8', '1/4', '1/2', ...Array.from({ length: 30 }, (_, i) => S
 const ABILS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 const SECTIONS = [
   ['traits', 'Traits'], ['actions', 'Actions'], ['bonusActions', 'Bonus actions'],
-  ['reactions', 'Reactions'], ['legendary', 'Legendary actions'],
+  ['reactions', 'Reactions'], ['legendary', 'Legendary actions'], ['lair', 'Lair actions'],
 ];
 
 const $ = s => document.querySelector(s);
@@ -315,7 +315,8 @@ function statBlockHtml(m) {
   const sections = SECTIONS.slice(1).map(([k, label]) => {
     const list = m[k] || [];
     if (!list.length) return '';
-    const intro = k === 'legendary' && m.legendaryIntro ? `<p class="entry">${fmt(m.legendaryIntro)}</p>` : '';
+    const introText = k === 'legendary' ? m.legendaryIntro : k === 'lair' ? m.lairIntro : '';
+    const intro = introText ? `<p class="entry">${fmt(introText)}</p>` : '';
     return `<h3>${label.replace(/\b\w/g, c => c.toUpperCase())}</h3>${intro}${list.map(entryHtml).join('')}`;
   }).join('');
   return `<article class="statblock" aria-label="${esc(m.name)} stat block">
@@ -404,6 +405,8 @@ function renderEditor() {
         ${inp('legendaryResistance', 'Legendary resistance per day', m.legendaryResistance, 'type="number" inputmode="numeric" min="0"')}
         <label class="f wide">Intro text<textarea class="field" data-k="legendaryIntro" rows="2">${esc(m.legendaryIntro)}</textarea></label>
       </div>` : ''}
+      ${k === 'lair' ? `<p class="hint">Lair actions join the combat tracker automatically on initiative 20 when this monster is in the fight.</p>
+        <label class="f" style="margin-bottom:10px">Intro text<textarea class="field" data-k="lairIntro" rows="2" placeholder="On initiative count 20 (losing initiative ties), the creature takes a lair action…">${esc(m.lairIntro || '')}</textarea></label>` : ''}
       <div class="entrylist" data-sec="${k}">${(m[k] || []).map((e, i) => entryRow(k, e, i, m[k].length)).join('')}</div>
       <button class="btn" type="button" data-act="add" data-sec="${k}" style="margin-top:10px">Add ${label.toLowerCase().replace(/s$/, '')}</button>
     </fieldset>`).join('')}
