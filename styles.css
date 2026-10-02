@@ -61,13 +61,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* Search + filters */
-.search{padding:12px 12px 8px;display:grid;gap:8px}
+.search{padding:12px 12px 8px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
 .field{width:100%;min-height:44px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
 textarea.field{min-height:88px;resize:vertical;line-height:1.4}
-.filters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.filters select{min-height:40px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-width:0}
+.filters select{width:100%;min-width:0;text-overflow:ellipsis;min-height:40px;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
 .crrange{display:flex;align-items:center;gap:6px;grid-column:1/-1;color:var(--muted);font-size:.9rem}
-.crrange select{flex:1}
+.crrange select{flex:1;min-width:0}
 .count{padding:2px 14px 8px;color:var(--muted);font-size:.85rem;display:flex;justify-content:space-between}
 .count button{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font-size:.85rem}
 
