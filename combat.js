@@ -584,6 +584,7 @@ function detailHtml() {
     sections.push(`<div class="dbox"><h3>Notes</h3><textarea class="field" data-c="pcnotes" rows="3" placeholder="Anything to remember about this character">${esc(r.notes || '')}</textarea></div>`);
   } else {
     const m = ctx.getMonster(c.monsterId);
+    if (m?.tactics) sections.push(`<div class="dbox tacticsbox"><h3>Tactics</h3><p class="desc" style="margin:0">${ctx.fmt(m.tactics)}</p></div>`);
     sections.push(`<div class="dbox sbwrap">${m ? ctx.statBlockHtml(m) : '<p class="note">This monster is no longer in your library.</p>'}</div>`);
   }
   sections.push(`<div class="drow"><button class="btn danger" type="button" data-c="remove">${c.kind === 'pc' ? 'Sit out this combat' : 'Remove from combat'}</button></div>`);

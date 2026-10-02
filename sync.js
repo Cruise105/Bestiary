@@ -105,20 +105,51 @@ async function download(id) {
 }
 
 async function upload(data) {
+  const res = await uploadNamed(FILE_NAME, data, ss.fileId);
+  return res;
+}
+
+// Create or replace one JSON file in the app's private Drive folder
+async function uploadNamed(name, data, existingId) {
   const body = JSON.stringify(data);
-  if (ss.fileId) {
-    const r = await api(`${UPLOAD}/${ss.fileId}?uploadType=media&fields=id,modifiedTime`, {
+  if (existingId) {
+    const r = await api(`${UPLOAD}/${existingId}?uploadType=media&fields=id,modifiedTime`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body,
     });
     return r.json();
   }
   const boundary = 'bestiary' + Math.random().toString(36).slice(2);
-  const meta = JSON.stringify({ name: FILE_NAME, parents: ['appDataFolder'], mimeType: 'application/json' });
+  const meta = JSON.stringify({ name, parents: ['appDataFolder'], mimeType: 'application/json' });
   const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
   const r = await api(`${UPLOAD}?uploadType=multipart&fields=id,modifiedTime`, {
     method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart,
   });
   return r.json();
+}
+
+// Pictures travel as their own small files (img-<monster id>.json) so the main sync file stays light
+async function syncImages() {
+  const q = encodeURIComponent("name contains 'img-'");
+  const r = await api(`${API}?spaces=appDataFolder&q=${q}&fields=files(id,name)&pageSize=1000`);
+  const remote = new Map(((await r.json()).files || []).map(f => [f.name.replace(/^img-/, '').replace(/\.json$/, ''), f.id]));
+  const sent = ss.imgSent || (ss.imgSent = {});
+  let pulled = 0;
+  for (const m of ctx.monsters()) {
+    if (!m.image) continue;
+    const want = m.image.updated || 0;
+    const local = await db.getImage(m.id);
+    if (local && (local.updated || 0) >= want) {
+      if (sent[m.id] !== local.updated) {
+        const res = await uploadNamed(`img-${m.id}.json`, local, remote.get(m.id));
+        remote.set(m.id, res.id); sent[m.id] = local.updated;
+      }
+    } else if (remote.has(m.id)) {
+      const rec = await (await api(`${API}/${remote.get(m.id)}?alt=media`)).json();
+      if (rec?.data && (rec.updated || 0) >= want) { await db.putImage(rec); sent[m.id] = rec.updated; pulled++; }
+    }
+  }
+  if (pulled) ctx.picturesChanged();
+  return pulled;
 }
 
 /* ---------- the sync itself ---------- */
@@ -153,6 +184,8 @@ export async function syncNow({ interactive = false, quiet = false } = {}) {
       const res = await upload(local);
       ss.fileId = res.id; ss.remoteModified = res.modifiedTime; ss.lastHash = h;
     }
+    const pics = await syncImages();
+    if (pics && summary) summary.parts.push(`${pics} picture${pics === 1 ? '' : 's'}`);
     const firstTime = !ss.connected;
     ss.connected = true; ss.lastSync = Date.now();
     await saveState();

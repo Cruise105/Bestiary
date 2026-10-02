@@ -27,6 +27,7 @@ const state = {
   settings: { theme: 'night', spellMode: 'slots', initMode: 'rolls', hpMode: 'block' },
   deletedSrd: [],     // [{id, at}]
   srdOriginals: null, // lazy-loaded for "revert"
+  tab: 'stats',       // 'stats' | 'lore' on the monster page
 };
 
 /* ---------- helpers ---------- */
@@ -247,10 +248,52 @@ function renderDetail() {
       ${isSrd && m.edited ? '<button class="btn" type="button" data-act="revert">Revert to SRD</button>' : ''}
       <button class="btn danger" type="button" data-act="delete">Delete</button>
     </div>
-    ${statBlockHtml(m)}
-    ${m.notes ? `<div class="notes">${fmt(m.notes)}</div>` : ''}
+    <div class="tabs" role="tablist" aria-label="Monster page">
+      <button type="button" role="tab" data-act="tab" data-tab="stats" aria-selected="${state.tab === 'stats'}">Stat block</button>
+      <button type="button" role="tab" data-act="tab" data-tab="lore" aria-selected="${state.tab === 'lore'}">Lore${hasLore(m) ? '<span class="dot" aria-label="has content"></span>' : ''}</button>
+    </div>
+    ${state.tab === 'lore' ? loreHtml(m) : `${statBlockHtml(m)}
+    ${m.notes ? `<div class="notes">${fmt(m.notes)}</div>` : ''}`}
     <p class="sb-foot">${esc(m.source || 'No source')}${m.tags ? ` · Tags: ${esc(m.tags)}` : ''}${m.updated ? ` · Edited ${new Date(m.updated).toLocaleDateString()}` : ''}</p>
   </div>`;
+}
+
+/* ---------- Lore tab ---------- */
+const hasLore = m => !!(m.description || m.tactics || m.image);
+
+function loreHtml(m) {
+  if (!hasLore(m)) return `<div class="lore empty-lore"><p>No lore yet. Tap Edit to add a picture, combat tactics, or background for ${esc(m.name)}.</p></div>`;
+  queueMicrotask(() => showImage(m, '#loreImg'));
+  return `<article class="lore">
+    ${m.image ? `<figure class="lorepic"><button type="button" class="picbtn" data-act="bigpic" aria-label="View picture full size"><img id="loreImg" alt="${esc(m.name)}"></button></figure>` : ''}
+    ${m.tactics ? `<section class="lorebox tactics"><h3>Tactics</h3><p class="desc">${fmt(m.tactics)}</p></section>` : ''}
+    ${m.description ? `<section class="lorebox"><h3>Lore</h3><div class="desc">${fmt(m.description)}</div></section>` : ''}
+  </article>`;
+}
+
+async function showImage(m, sel) {
+  const el = document.querySelector(sel);
+  if (!el || !m.image) return;
+  const rec = await db.getImage(m.id);
+  if (rec) el.src = rec.data;
+  else el.closest('figure')?.classList.add('pending');
+}
+
+// Shrink a picked photo so it stays small on the device and in sync
+async function shrinkImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("That file couldn't be opened as a picture.")); img.src = url; });
+    const max = 1200;
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    let out = cv.toDataURL('image/webp', 0.82);
+    if (!out.startsWith('data:image/webp')) out = cv.toDataURL('image/jpeg', 0.82);
+    return out;
+  } finally { URL.revokeObjectURL(url); }
 }
 
 // DMG spell points variant (2014), with Cruise's high-level casting strain rule.
@@ -342,7 +385,6 @@ function statBlockHtml(m) {
     <p class="ln"><b>Challenge</b> ${esc(m.cr)} (${Number(m.xp || 0).toLocaleString()} XP) &nbsp; <b>Proficiency Bonus</b> +${esc(m.pb)}</p>
     ${traitsHtml(m)}
     ${sections}
-    ${m.description ? `<h3>Description</h3><p class="desc">${fmt(m.description)}</p>` : ''}
   </article>`;
 }
 
@@ -362,6 +404,11 @@ function inp(k, label, val, attrs = '') {
 
 function renderEditor() {
   const m = state.editing;
+  queueMicrotask(async () => {
+    const el = document.querySelector('#edImg'); if (!el) return;
+    if (m._img) el.src = m._img;
+    else if (m.image && m.id) { const rec = await db.getImage(m.id); if (rec) el.src = rec.data; }
+  });
   const sc = m.spellcasting || { ability: '', dc: '', attack: '', level: '', slots: {} };
   detailEl.innerHTML = `<form class="editor" id="editForm" autocomplete="off">
     <h2>${m._isNew ? 'New monster' : 'Edit ' + esc(m.name)}</h2>
@@ -427,7 +474,26 @@ function renderEditor() {
 
     <fieldset><legend>Notes</legend>
       <label class="f">Your notes (shown under the stat block)<textarea class="field" data-k="notes" rows="4">${esc(m.notes)}</textarea></label>
-      <label class="f" style="margin-top:10px">Description or lore<textarea class="field" data-k="description" rows="3">${esc(m.description)}</textarea></label>
+    </fieldset>
+
+    <fieldset><legend>Lore tab</legend>
+      <div class="picedit">
+        <div class="picprev" id="edPicBox">${m._img === null || (!m._img && !m.image) ? '<span class="note">No picture</span>' : '<img id="edImg" alt="Picture preview">'}</div>
+        <div class="picbtns">
+          <button class="btn" type="button" data-act="pickpic">${m._img || (m._img === undefined && m.image) ? 'Change picture' : 'Add picture'}</button>
+          ${m._img || (m._img === undefined && m.image) ? '<button class="btn danger" type="button" data-act="rmpic">Remove picture</button>' : ''}
+          <p class="note">Any photo or image on this device. It's shrunk to save space and syncs with your other device.</p>
+        </div>
+        <input type="file" id="picFile" accept="image/*" hidden>
+      </div>
+      <div class="fmtwrap" data-fmt style="margin-top:12px">
+        <label class="f">Tactics (also shown in the combat tracker)<textarea class="field" data-k="tactics" rows="3" placeholder="Opens with Fire Breath, focuses spellcasters, flees below half HP…">${esc(m.tactics || '')}</textarea></label>
+        <button class="btn icon fmtbtn" type="button" data-act="italic" aria-label="Italicize selected text" title="Italicize selected text">I</button>
+      </div>
+      <div class="fmtwrap" data-fmt style="margin-top:12px">
+        <label class="f">Lore<textarea class="field" data-k="description" rows="8" placeholder="Background, habitat, behavior, rumors…">${esc(m.description)}</textarea></label>
+        <button class="btn icon fmtbtn" type="button" data-act="italic" aria-label="Italicize selected text" title="Italicize selected text">I</button>
+      </div>
     </fieldset>
 
     <div class="editbar">
@@ -438,7 +504,7 @@ function renderEditor() {
 }
 
 function entryRow(sec, e, i, n) {
-  return `<div class="entryrow" data-i="${i}">
+  return `<div class="entryrow" data-fmt data-i="${i}">
     <input class="field" data-e="name" value="${esc(e.name)}" placeholder="Name, e.g. Bite or Fire Breath (Recharge 5–6)" aria-label="Name">
     <span class="ctl">
       <button class="btn icon fmtbtn" type="button" data-act="italic" aria-label="Italicize selected text" title="Italicize selected text">I</button>
@@ -483,6 +549,9 @@ async function submitEditor() {
   if (!m.legendary.length) m.legendaryCount = 0;
   delete m._isNew;
   if (!m.id) m.id = uid();
+  const img = m._img; delete m._img;
+  if (img === null) { m.image = null; await db.delImage(m.id); }
+  else if (img) { const t = now(); await db.putImage({ id: m.id, data: img, updated: t }); m.image = { updated: t }; }
   await saveMonster(m);
   state.editing = null; state.dirty = false;
   state.selectedId = m.id;
@@ -501,6 +570,7 @@ async function onDetailAction(act, btn) {
       const c = structuredClone(m);
       c.id = ''; c.name = `${m.name} (copy)`; c.edited = false; c.created = 0; c.updated = 0;
       if (c.source === 'SRD 5.1') c.source = 'Homebrew';
+      if (m.image) { const rec = await db.getImage(m.id); c.image = null; if (rec) c._img = rec.data; }
       openEditor(c, { isNew: true });
       break;
     }
@@ -517,6 +587,7 @@ async function onDetailAction(act, btn) {
     case 'delete': {
       if (!await confirmBox(`Delete ${m.name}?`, m.id.startsWith('srd-') ? 'It is removed from your library. Backups you load later can bring it back.' : 'This removes it from this device. If it is in a backup file, loading that backup brings it back.', 'Delete')) return;
       await db.del(m.id);
+      await db.delImage(m.id);
       if (m.id.startsWith('srd-')) {
         state.deletedSrd = state.deletedSrd.filter(d => d.id !== m.id).concat({ id: m.id, at: now() });
         await db.setMeta('deletedSrd', state.deletedSrd);
@@ -551,7 +622,7 @@ async function onDetailAction(act, btn) {
       break;
     }
     case 'italic': {
-      const ta = btn.closest('.entryrow').querySelector('textarea');
+      const ta = btn.closest('[data-fmt]').querySelector('textarea');
       const { selectionStart: s, selectionEnd: e2, value: v } = ta;
       if (s === e2) { toast('Select the words to italicize first.'); ta.focus(); return; }
       const sel = v.slice(s, e2).trim();
@@ -559,6 +630,18 @@ async function onDetailAction(act, btn) {
       ta.value = v.slice(0, s + lead) + `*${sel}*` + v.slice(s + lead + sel.length);
       ta.focus(); ta.setSelectionRange(s + lead, s + lead + sel.length + 2);
       state.dirty = true;
+      break;
+    }
+    case 'pickpic': return document.querySelector('#picFile').click();
+    case 'rmpic': {
+      readForm(); state.editing._img = null; state.dirty = true;
+      const y = detailEl.scrollTop; renderEditor(); detailEl.scrollTop = y;
+      break;
+    }
+    case 'tab': state.tab = btn.dataset.tab; renderDetail(); break;
+    case 'bigpic': {
+      const rec = await db.getImage(m.id); if (!rec) return;
+      $('#bigImg').src = rec.data; $('#bigImg').alt = m.name; $('#picDlg').showModal();
       break;
     }
     case 'detectsc': {
@@ -575,10 +658,12 @@ async function onDetailAction(act, btn) {
 
 /* ---------- backup ---------- */
 // Everything worth carrying between devices (also what Drive sync stores)
-async function buildBackupData() {
+async function buildBackupData({ images = false } = {}) {
   const all = await db.all();
   const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
-  return { app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
+  const pics = [];
+  if (images) for (const m of mine) if (m.image) { const rec = await db.getImage(m.id); if (rec) pics.push(rec); }
+  return { images: pics, app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
 }
 
 // Merge another device's data in; newest edit wins. Returns a short summary.
@@ -600,6 +685,11 @@ async function mergeBackupData(data) {
     if (!state.deletedSrd.some(x => x.id === d.id)) state.deletedSrd.push(d);
   }
   await db.setMeta('deletedSrd', state.deletedSrd);
+  let picsN = 0;
+  for (const rec of data.images || []) {
+    const cur = await db.getImage(rec.id);
+    if (!cur || (rec.updated || 0) > (cur.updated || 0)) { await db.putImage(rec); picsN++; }
+  }
   const partyChanged = await mergePartyFromBackup(data.party);
   const encN = await mergeEncountersFromBackup(data.encounters);
   if (added || updated || removed) { setMonsters(await db.all()); if (!state.editing) renderDetail(); }
@@ -610,11 +700,12 @@ async function mergeBackupData(data) {
   if (removed) parts.push(`${removed} removed`);
   if (partyChanged) parts.push('party updated');
   if (encN) parts.push(`${encN} encounter${encN === 1 ? '' : 's'} updated`);
+  if (picsN) { parts.push(`${picsN} picture${picsN === 1 ? '' : 's'}`); if (!state.editing) renderDetail(); }
   return { parts, kept, changed: parts.length > 0 };
 }
 
 async function exportBackup() {
-  const data = await buildBackupData();
+  const data = await buildBackupData({ images: true });
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a');
   const d = new Date();
@@ -677,6 +768,15 @@ function wire() {
     }
   });
   detailEl.addEventListener('submit', e => { e.preventDefault(); submitEditor(); });
+  detailEl.addEventListener('change', async e => {
+    if (e.target.id !== 'picFile' || !e.target.files[0] || !state.editing) return;
+    try {
+      readForm();
+      state.editing._img = await shrinkImage(e.target.files[0]);
+      state.dirty = true;
+      const y = detailEl.scrollTop; renderEditor(); detailEl.scrollTop = y;
+    } catch (err) { toast(err.message); }
+  });
 
   $('#newBtn').addEventListener('click', () => {
     const m = blankMonster(); m.source = 'Homebrew';
@@ -736,7 +836,7 @@ async function start() {
   initCrSelects();
   wire();
   initCombat({
-    toast, confirmBox, choice, statBlockHtml,
+    toast, confirmBox, choice, statBlockHtml, fmt,
     getMonster: id => state.byId.get(id),
     allMonsters: () => state.monsters,
     settings: () => state.settings,
@@ -756,7 +856,8 @@ async function start() {
     await loadCombat();
     await loadEncounters();
     updateBadge();
-    initSync({ toast, build: buildBackupData, merge: mergeBackupData });
+    initSync({ toast, build: buildBackupData, merge: mergeBackupData, monsters: () => state.monsters,
+      picturesChanged: () => { if (!state.editing) renderDetail(); } });
   } catch (err) {
     detailEl.innerHTML = `<div class="empty"><h2>The library couldn't load</h2><p>${esc(err.message)}. Reload the page; if it keeps happening, load your latest backup file.</p></div>`;
     return;

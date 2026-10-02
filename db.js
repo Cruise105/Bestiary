@@ -1,6 +1,6 @@
 // Tiny IndexedDB wrapper. Everything lives on this device.
 const DB_NAME = 'bestiary';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbp;
 
 function open() {
@@ -11,6 +11,7 @@ function open() {
       const db = req.result;
       if (!db.objectStoreNames.contains('monsters')) db.createObjectStore('monsters', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+      if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -38,6 +39,9 @@ export const db = {
   put: m => tx('monsters', 'readwrite', s => { s.put(m); }),
   putMany: list => tx('monsters', 'readwrite', s => { list.forEach(m => s.put(m)); }),
   del: id => tx('monsters', 'readwrite', s => { s.delete(id); }),
+  getImage: id => tx('images', 'readonly', s => reqP(s.get(id))),
+  putImage: rec => tx('images', 'readwrite', s => { s.put(rec); }),
+  delImage: id => tx('images', 'readwrite', s => { s.delete(id); }),
   getMeta: key => tx('meta', 'readonly', s => reqP(s.get(key))),
   setMeta: (key, val) => tx('meta', 'readwrite', s => { s.put(val, key); }),
 };
