@@ -1,7 +1,7 @@
 import { db } from './db.js';
 import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
-import { blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
+import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
 const SRD_VERSION = 1;
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
@@ -23,7 +23,7 @@ const state = {
   selectedId: null,
   editing: null,      // working copy while the editor is open
   dirty: false,
-  settings: { theme: 'night', spellMode: 'slots', initMode: 'rolls' },
+  settings: { theme: 'night', spellMode: 'slots', initMode: 'rolls', hpMode: 'block' },
   deletedSrd: [],     // [{id, at}]
   srdOriginals: null, // lazy-loaded for "revert"
 };
@@ -325,6 +325,7 @@ function statBlockHtml(m) {
     <hr class="taper">
     ${line('Armor Class', m.ac)}
     ${line('Hit Points', `${m.hp}${m.hpFormula ? ` (${fmtFormula(m.hpFormula)})` : ''}`)}
+    ${state.settings.hpMode === 'cr' && HP_BY_CR[String(m.cr)] ? `<p class="ln hpcr">In combat: random ${HP_BY_CR[String(m.cr)].join('–')} (CR ${esc(m.cr)} range)</p>` : ''}
     ${line('Speed', m.speed)}
     <hr class="taper">
     <div class="abilities">${ABILS.map(a => `<div><b>${a.toUpperCase()}</b><span>${m[a]} (${mod(m[a])})</span></div>`).join('')}</div>
@@ -625,6 +626,7 @@ function applyTheme() {
   $('#themeSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.theme === state.settings.theme));
   $('#spellSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.spell === state.settings.spellMode));
   $('#initSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.init === (state.settings.initMode || 'rolls')));
+  $('#hpSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.hp === (state.settings.hpMode || 'block')));
 }
 
 async function storageInfo() {
@@ -681,6 +683,10 @@ function wire() {
   $('#initSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     state.settings.initMode = b.dataset.init; applyTheme(); saveSettings(); renderCombat();
+  });
+  $('#hpSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.settings.hpMode = b.dataset.hp; applyTheme(); saveSettings(); if (!state.editing) renderDetail();
   });
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());

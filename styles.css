@@ -344,3 +344,6 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .combat.ai .cmain{grid-template-columns:minmax(400px,540px) 1fr}
 .combat.ai .cac{white-space:nowrap}
 @media (max-width:820px){.combat.ai .cmain{grid-template-columns:1fr}}
+
+.statblock .hpcr{font-family:var(--sans);font-size:.9rem;color:var(--muted)}
+#settingsDlg .dlg{max-height:calc(100dvh - 40px);overflow:auto}

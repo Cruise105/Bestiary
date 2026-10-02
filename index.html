@@ -74,7 +74,7 @@
         <button type="button" data-spell="slots">Spell slots</button>
         <button type="button" data-spell="points">Spell points</button>
       </div>
-      <p>Applies to every caster. Stat blocks show a Spell Slots or Spell Points box right under the Spellcasting trait, and the combat tracker (coming next) will count down whichever you pick. Spell points use your house rule for 5th-level and higher spells.</p>
+      <p>Applies to every caster. Stat blocks show a Spell Slots or Spell Points box right under the Spellcasting trait, and the combat tracker counts down whichever you pick. Spell points use your house rule for 5th-level and higher spells.</p>
     </div>
     <div class="set">
       <h3>Turn order</h3>
@@ -85,13 +85,21 @@
       <p>Active Initiative (Giffyglyph's Darker Dungeons): no rolls; whoever finishes their turn picks who goes next. Five or more of the same monster act as one group, damaged creatures can interrupt for free, and you get one interrupt point per player each fight.</p>
     </div>
     <div class="set">
+      <h3>Monster HP in combat</h3>
+      <div class="seg" id="hpSeg" role="group" aria-label="Monster HP in combat">
+        <button type="button" data-hp="block">Stat block</button>
+        <button type="button" data-hp="cr">Random by CR</button>
+      </div>
+      <p>Random by CR gives each monster that joins a fight its own HP from the DMG's hit point range for its challenge rating, so two of the same monster can differ. Stat blocks themselves don't change.</p>
+    </div>
+    <div class="set">
       <h3>Backup and transfer</h3>
       <div class="row" style="justify-content:flex-start">
         <button class="btn" type="button" id="exportBtn">Save backup file</button>
         <button class="btn" type="button" id="restoreBtn">Load backup file</button>
         <input type="file" id="restoreFile" accept=".json,application/json" hidden>
       </div>
-      <p>A backup holds every monster you've created or edited. Loading one merges it in: new monsters are added, and when the same monster exists on both devices, the most recently edited version wins. Nothing else is removed.</p>
+      <p>A backup holds every monster you've created or edited, plus your party and saved encounters. Loading one merges it in: new monsters are added, and when the same monster exists on both devices, the most recently edited version wins. Nothing else is removed.</p>
     </div>
     <div class="set">
       <h3>Storage</h3>

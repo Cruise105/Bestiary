@@ -2,6 +2,7 @@
 // monster spellcasting (slots or points with the table's strain rule), and
 // the players' 5th/6th-level free-cast counters.
 import { db } from './db.js';
+import { HP_BY_CR } from './parser.js';
 
 const CONDITIONS = ['blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious'];
@@ -133,14 +134,25 @@ function ensureLairs() {
   }
 }
 
+// Random HP from the CR range when the table uses it; otherwise the stat block's HP
+function startingHp(m) {
+  const range = HP_BY_CR[String(m.cr)];
+  if (ctx.settings().hpMode === 'cr' && range) {
+    const [lo, hi] = range;
+    return { hp: lo + Math.floor(Math.random() * (hi - lo + 1)), hpNote: `Rolled from the CR ${m.cr} range (${lo}–${hi})` };
+  }
+  return { hp: +m.hp || 1, hpNote: '' };
+}
+
 function fromMonster(m, n) {
+  const start = startingHp(m);
   const sc = m.spellcasting;
   const lvl = Math.min(20, Math.max(0, +(sc?.level) || 0));
   const slots = {};
   Object.entries(sc?.slots || {}).forEach(([l, v]) => { if (+v > 0) slots[l] = { max: +v, used: 0 }; });
   return {
     cid: uid(), kind: 'monster', monsterId: m.id, name: n ? `${m.name} ${n}` : m.name, init: null,
-    bonus: modOf(m.dex ?? 10), ac: parseInt(m.ac, 10) || 10, maxHp: +m.hp || 1, hp: +m.hp || 1, temp: 0,
+    bonus: modOf(m.dex ?? 10), ac: parseInt(m.ac, 10) || 10, maxHp: start.hp, hp: start.hp, hpNote: start.hpNote, temp: 0,
     conds: [], exh: 0, conc: false, react: false,
     legMax: +m.legendaryCount || 0, legUsed: 0, lrMax: +m.legendaryResistance || 0, lrUsed: 0,
     caster: sc ? { abil: sc.ability || '', save: sc.ability ? saveBonus(m, sc.ability) : 0, level: lvl, spMax: SP_POOL[lvl], spUsed: 0, free: { 5: 0, 6: 0 }, slots, log: [] } : null,
@@ -508,6 +520,7 @@ function detailHtml() {
   // HP
   sections.push(`<div class="dbox hpbox">
     <div class="hpbig"><span class="hpnow">${r.hp}</span><span class="hpmax">/ ${r.maxHp}</span>${r.temp ? `<span class="hptemp">+${r.temp} temp</span>` : ''}</div>
+    ${c.hpNote ? `<p class="note" style="margin-top:2px">${esc(c.hpNote)}</p>` : ''}
     <div class="hpctl">
       <input class="field" id="hpAmt" type="number" inputmode="numeric" min="0" placeholder="Amount" aria-label="Amount">
       <button class="btn dmg" type="button" data-c="damage">Damage</button>
