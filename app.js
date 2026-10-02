@@ -220,6 +220,46 @@ function renderDetail() {
   </div>`;
 }
 
+// DMG spell points variant (2014), with Cruise's high-level casting strain rule.
+const SP_POOL = [0, 4, 6, 14, 17, 27, 32, 38, 44, 57, 64, 73, 73, 83, 83, 94, 94, 107, 114, 123, 133];
+const SP_MAXLVL = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 9, 9];
+const SP_COST = { 1: 2, 2: 3, 3: 5, 4: 6, 5: 7, 6: 9, 7: 10, 8: 11, 9: 13 };
+const ORD = n => n + (['th', 'st', 'nd', 'rd'][n] || 'th');
+
+function spellTrackingHtml(m) {
+  const sc = m.spellcasting;
+  if (!sc) return '';
+  if (state.settings.spellMode === 'points') {
+    const lvl = Math.min(20, Math.max(0, +sc.level || 0));
+    if (!lvl) return `<div class="spelltrack"><p class="ln"><b>Spell Points</b> set a caster level in the editor to see this caster's pool.</p></div>`;
+    const max = SP_MAXLVL[lvl];
+    const costs = Object.entries(SP_COST).filter(([l]) => +l <= max).map(([l, c]) => `${ORD(+l)} ${c}`).join(', ');
+    const strain = [];
+    const abil = { INT: 'Intelligence', WIS: 'Wisdom', CHA: 'Charisma' }[sc.ability] || 'spellcasting ability';
+    if (max >= 5) strain.push(`${max >= 6 ? '5th and 6th level: 3 free casts of each per long rest' : '5th level: 3 free casts per long rest'}; after that, each cast needs ${/^[AEIOU]/.test(abil) ? "an" : "a"} ${abil} saving throw (DC 10 + spell level), and a failure adds exhaustion equal to half the spell's level, rounded down`);
+    if (max >= 7) strain.push('7th level and higher: that save applies to every cast, including the first');
+    return `<div class="spelltrack">
+      <p class="ln"><b>Spell Points</b> ${SP_POOL[lvl]} (${ORD(lvl)}-level caster; spells up to ${ORD(max)} level)</p>
+      <p class="ln"><b>Cost</b> ${costs}</p>
+      ${strain.length ? `<p class="ln"><b>Strain</b> ${strain.join('. ')}.</p>` : ''}
+    </div>`;
+  }
+  const slots = Object.entries(sc.slots || {}).filter(([, n]) => +n > 0).map(([l, n]) => `${ORD(+l)} ${n}`).join(', ');
+  return slots ? `<div class="spelltrack"><p class="ln"><b>Spell Slots</b> ${slots}</p></div>` : '';
+}
+
+// Traits, with the spell tracking box placed right after the Spellcasting trait
+function traitsHtml(m) {
+  const traits = m.traits || [];
+  const box = spellTrackingHtml(m);
+  if (!traits.length) return box ? '<hr class="taper">' + box : '';
+  let idx = traits.findIndex(t => /spellcasting/i.test(t.name) && !/innate/i.test(t.name));
+  if (idx < 0) idx = traits.findIndex(t => /spellcasting/i.test(t.name));
+  const parts = traits.map(entryHtml);
+  if (box) parts.splice(idx < 0 ? parts.length : idx + 1, 0, box);
+  return '<hr class="taper">' + parts.join('');
+}
+
 function entryHtml(e) {
   const desc = esc(e.desc)
     .replace(/^(Melee or Ranged Weapon Attack:|Melee Weapon Attack:|Ranged Weapon Attack:|Melee Spell Attack:|Ranged Spell Attack:)/, '<i>$1</i>')
@@ -258,7 +298,7 @@ function statBlockHtml(m) {
     ${line('Senses', m.senses)}
     ${line('Languages', m.languages)}
     <p class="ln"><b>Challenge</b> ${esc(m.cr)} (${Number(m.xp || 0).toLocaleString()} XP) &nbsp; <b>Proficiency Bonus</b> +${esc(m.pb)}</p>
-    ${(m.traits || []).length ? '<hr class="taper">' + m.traits.map(entryHtml).join('') : ''}
+    ${traitsHtml(m)}
     ${sections}
     ${m.description ? `<h3>Description</h3><p class="desc">${esc(m.description)}</p>` : ''}
   </article>`;
@@ -587,7 +627,7 @@ function wire() {
   });
   $('#spellSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings();
+    state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings(); if (!state.editing) renderDetail();
   });
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());
@@ -620,7 +660,16 @@ async function start() {
   renderDetail();
   history.replaceState({ view: 'list' }, '');
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // When an update finishes installing, reload once so the new version shows right away
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) return;
+      if (state.editing && state.dirty) { toast('An update is ready. It applies next time you open the app.'); return; }
+      location.reload();
+    });
+  }
 }
 
 start();

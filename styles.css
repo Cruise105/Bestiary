@@ -160,3 +160,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .detailpane:has(.editor){padding-bottom:0}
+
+.spelltrack{margin:-2px 0 10px;padding:8px 12px;border:1px dashed var(--accent);border-radius:4px;background:var(--accent-soft)}
+.spelltrack .ln{margin:2px 0}
+:root[data-theme="red"] .spelltrack{border-style:solid;border-width:2px;background:none}

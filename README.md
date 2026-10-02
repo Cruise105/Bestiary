@@ -29,7 +29,7 @@ Save a backup now and then even if you only use the tablet. Everything lives on 
 
 ## Updating the app later
 
-When I send you new files, upload them to the same repository the same way (replace the old ones). The next time the app opens while online, it picks up the update. Your monsters are not touched by updates.
+When I send you new files, upload them to the same repository the same way (files with the same names replace the old ones). Give GitHub a minute or two, then open the app while online. It downloads the update and refreshes itself within a few seconds. Your monsters are not touched by updates.
 
 ## Credits
 
