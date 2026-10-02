@@ -23,7 +23,7 @@ const state = {
   selectedId: null,
   editing: null,      // working copy while the editor is open
   dirty: false,
-  settings: { theme: 'night', spellMode: 'slots' },
+  settings: { theme: 'night', spellMode: 'slots', initMode: 'rolls' },
   deletedSrd: [],     // [{id, at}]
   srdOriginals: null, // lazy-loaded for "revert"
 };
@@ -624,6 +624,7 @@ function applyTheme() {
   document.querySelector('meta[name="theme-color"]').content = { day: '#f7f9fa', night: '#141a22', red: '#000000' }[state.settings.theme];
   $('#themeSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.theme === state.settings.theme));
   $('#spellSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.spell === state.settings.spellMode));
+  $('#initSeg').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.init === (state.settings.initMode || 'rolls')));
 }
 
 async function storageInfo() {
@@ -676,6 +677,10 @@ function wire() {
   $('#spellSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings(); if (!state.editing) renderDetail(); renderCombat();
+  });
+  $('#initSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.settings.initMode = b.dataset.init; applyTheme(); saveSettings(); renderCombat();
   });
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());

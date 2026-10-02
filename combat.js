@@ -67,7 +67,7 @@ export function monsterCounts() {
 }
 export function clearMonsters() {
   cs.enc.combatants = cs.enc.combatants.filter(c => c.kind === 'pc');
-  cs.enc.started = false; cs.enc.round = 0; cs.enc.turn = -1; cs.enc.loaded = null; cs.enc.noLair = [];
+  cs.enc.started = false; cs.enc.round = 0; cs.enc.turn = -1; cs.enc.loaded = null; cs.enc.noLair = []; cs.enc.active = null;
   cs.sel = null; persist();
 }
 export function setLoaded(enc, added) {
@@ -168,6 +168,96 @@ export function addMonsterToCombat(m, count = 1) {
   persist(); render();
 }
 
+/* ---------- Active Initiative (Giffyglyph's Darker Dungeons) ---------- */
+const GROUP_MIN = 5;
+const activeMode = () => ctx.settings().initMode === 'active';
+const sideOf = c => (c.kind === 'pc' ? 'party' : 'foes');
+
+function unitKey(c) {
+  if (c.kind === 'monster' && cs.enc.combatants.filter(x => x.kind === 'monster' && x.monsterId === c.monsterId).length >= GROUP_MIN) return 'g:' + c.monsterId;
+  return c.cid;
+}
+
+// Everyone who takes a turn: players and monsters individually, 5+ of the same monster as one group
+function units() {
+  const out = []; const seen = new Map();
+  for (const c of cs.enc.combatants) {
+    const k = unitKey(c);
+    if (seen.has(k)) { seen.get(k).members.push(c); continue; }
+    const u = { key: k, members: [c], side: sideOf(c), group: k.startsWith('g:') };
+    seen.set(k, u); out.push(u);
+  }
+  out.forEach(u => {
+    if (u.group) { const m = ctx.getMonster(u.members[0].monsterId); u.name = `${m ? m.name : u.members[0].name} group`; }
+    else u.name = nameOf(u.members[0]);
+    u.down = u.members.every(m => isDown(m));
+  });
+  return out;
+}
+
+function act() { return cs.enc.active; }
+function snapshot() {
+  const a = act();
+  a.history = (a.history || []).slice(-30);
+  a.history.push(JSON.stringify({ round: a.round, acted: a.acted, current: a.current, last: a.last, hurt: a.hurt, hurtAfter: a.hurtAfter, ip: a.ip }));
+}
+
+function startActive() {
+  if (!cs.enc.combatants.length) return ctx.toast('Add monsters or players first.');
+  const players = cs.enc.combatants.filter(c => c.kind === 'pc').length;
+  cs.enc.active = { round: 1, acted: [], current: null, last: null, hurt: [], hurtAfter: [], ip: { max: players, left: players, round: 0 }, history: [] };
+  cs.enc.started = true; cs.enc.round = 1; cs.enc.turn = -1;
+  persist(); render();
+  ctx.toast('Who triggered the scene? Tap Goes first on them.');
+}
+
+function pickNext(key, how) {
+  const a = act(); const u = units().find(x => x.key === key); if (!u) return;
+  snapshot();
+  if (how === 'point') { a.ip.left--; a.ip.round = a.round; }
+  a.current = key; a.hurt = [];
+  u.members.forEach(m => { if (m.kind === 'monster') beginTurn(m); });
+  cs.sel = u.members[0].cid;
+  persist(); render();
+}
+
+function endTurnActive() {
+  const a = act(); if (!a.current) return;
+  snapshot();
+  a.acted.push(a.current); a.last = a.current; a.hurtAfter = a.hurt; a.hurt = []; a.current = null;
+  const left = units().filter(u => !u.down && !a.acted.includes(u.key));
+  if (!left.length) {
+    a.round++; cs.enc.round = a.round; a.acted = []; a.hurtAfter = [];
+    const lastU = units().find(u => u.key === a.last);
+    ctx.toast(`Round ${a.round}. ${lastU ? lastU.name : 'The last to act'} picks who starts (not themselves).`);
+  }
+  persist(); render();
+}
+
+function undoActive() {
+  const a = act(); const prev = a.history?.pop();
+  if (!prev) return ctx.toast('Nothing to undo.');
+  Object.assign(a, JSON.parse(prev)); cs.enc.round = a.round;
+  persist(); render();
+}
+
+// Buttons for picking who goes next, including interrupts
+function pickButtons(u) {
+  const a = act();
+  if (!a || !cs.enc.started || a.current || u.down || a.acted.includes(u.key)) return '';
+  if (!a.last) return `<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Goes first</button>`;
+  const newRound = !a.acted.length;
+  const lastU = units().find(x => x.key === a.last);
+  if (newRound && u.key === a.last) return '<span class="note pickwait">Picks who starts</span>';
+  const btns = [`<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Next</button>`];
+  if (!newRound && lastU && lastU.side !== u.side) {
+    if (a.hurtAfter.includes(u.key)) btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="free">Interrupt · free</button>`);
+    else if (u.side === 'foes' && a.ip.left > 0 && a.ip.round !== a.round) btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="point">Interrupt · point</button>`);
+    else if (u.side === 'party') btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="inspiration">Interrupt · inspiration</button>`);
+  }
+  return `<span class="picks">${btns.join('')}</span>`;
+}
+
 /* ---------- combat flow ---------- */
 function ensurePartyInEncounter() {
   const out = cs.enc.sitOut || [];
@@ -180,6 +270,7 @@ function ensurePartyInEncounter() {
 }
 
 function startCombat() {
+  if (activeMode()) return startActive();
   const missing = cs.enc.combatants.filter(c => c.init == null);
   if (!cs.enc.combatants.length) return ctx.toast('Add monsters or players first.');
   if (missing.length) return ctx.toast(`Enter initiative for ${missing.map(nameOf).slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`);
@@ -222,7 +313,7 @@ async function endCombat() {
     ? `${down.length} of ${mons.length} monsters defeated, worth ${xp.toLocaleString()} XP${cs.party.length ? ` (${Math.floor(xp / cs.party.length).toLocaleString()} each for ${cs.party.length} players)` : ''}. Monsters are cleared; players keep their current HP and conditions.`
     : 'Players keep their current HP and conditions.';
   if (!await ctx.confirmBox('End combat?', body, 'End combat')) return;
-  cs.enc = { combatants: [], round: 0, turn: -1, started: false, sitOut: [] };
+  cs.enc = { combatants: [], round: 0, turn: -1, started: false, sitOut: [], active: null };
   cs.party.forEach(p => { p.conc = false; });
   cs.sel = null;
   touchParty(); persist(); render();
@@ -237,6 +328,8 @@ function applyHp(c, kind, amount) {
     if (r.temp > 0) { const t = Math.min(r.temp, left); r.temp -= t; left -= t; }
     const wasZero = r.hp <= 0;
     r.hp = Math.max(0, r.hp - left);
+    const a = act();
+    if (activeMode() && a?.current) { const k = unitKey(c); if (!a.hurt.includes(k)) a.hurt.push(k); }
     if (c.kind === 'pc' && wasZero && left > 0) ctx.toast(`${r.name} takes damage at 0 HP: mark a death save failure (two if it was a critical hit).`);
     else if (r.conc) ctx.toast(`Concentration check for ${nameOf(c)}: Constitution save, DC ${Math.max(10, Math.floor(amount / 2))}.`);
   } else if (kind === 'heal') {
@@ -315,14 +408,30 @@ export function render() {
   cs.enc.combatants.forEach(c => { if (c.kind === 'monster' && !c.uses) { const m = ctx.getMonster(c.monsterId); c.uses = m ? buildUses(m) : []; } });
   const e = cs.enc;
   if (!cs.sel && e.combatants.length) cs.sel = e.combatants[0].cid;
+  const AI = activeMode();
+  root.classList.toggle('ai', AI);
+  if (AI && e.started && !e.active) { e.started = false; e.round = 0; } // switched modes mid-fight: set up again
+  if (!AI && e.started && e.active) { e.started = false; e.round = 0; e.active = null; }
+  const a = e.active;
+  const curU = AI && a?.current ? units().find(u => u.key === a.current) : null;
+  const ipPips = AI && a ? `<span class="ipbox" title="Interrupt points"><span>Interrupt points</span>${Array.from({ length: a.ip.max }, (_, i) => `<span class="ippip${i < a.ip.left ? ' on' : ''}"></span>`).join('')}${a.ip.round === a.round ? '<small>used this round</small>' : ''}</span>` : '';
+  const bar = AI
+    ? (e.started
+      ? `<span class="round">Round ${e.round}</span>
+         ${curU ? `<span class="acting">Acting: <b>${esc(curU.name)}</b></span><button class="btn primary big" type="button" data-c="endturn">End turn</button>`
+               : `<span class="acting">${a.last ? 'Pick who goes next' : 'Pick who goes first'}</span>`}
+         <button class="btn" type="button" data-c="undo">Undo</button>${ipPips}`
+      : `<span class="round">Setting up</span>
+         <button class="btn primary big" type="button" data-c="start">Start combat</button>`)
+    : null;
   root.innerHTML = `
     <div class="cbar">
-      ${e.started
+      ${bar ?? (e.started
         ? `<span class="round">Round ${e.round}</span>
            <button class="btn" type="button" data-c="prev">Previous</button>
            <button class="btn primary big" type="button" data-c="next">Next turn</button>`
         : `<span class="round">Setting up</span>
-           <button class="btn primary big" type="button" data-c="start">Start combat</button>`}
+           <button class="btn primary big" type="button" data-c="start">Start combat</button>`)}
       <span class="spacer"></span>
       ${(e.sitOut || []).map(id => pc(id)).filter(Boolean).map(p => `<button class="btn ghost" type="button" data-c="return" data-pid="${p.id}">Bring back ${esc(p.name)}</button>`).join('')}
       <button class="btn" type="button" data-c="encounters">Encounters</button>
@@ -332,43 +441,60 @@ export function render() {
       ${e.combatants.some(c => c.kind === 'monster') || e.started ? '<button class="btn danger" type="button" data-c="end">End combat</button>' : ''}
     </div>
     <div class="cmain">
-      <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${e.combatants.map(rowHtml).join('') || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
+      <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${(AI ? activeListHtml() : e.combatants.map((c, i) => rowHtml(c, i)).join('')) || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
       <section class="cdetail" aria-live="polite">${detailHtml()}</section>
     </div>`;
 }
 
-function rowHtml(c, i) {
+function activeListHtml() {
+  const a = act();
+  return units().map(u => {
+    const acting = a?.current === u.key; const done = a?.acted.includes(u.key);
+    const status = acting ? 'acting' : done ? 'acted' : u.down ? 'down' : 'ready';
+    if (!u.group) return rowHtml(u.members[0], -1, { status, picks: pickButtons(u) });
+    return `<li class="cgroup ${status}" ${acting ? 'aria-current="step"' : ''}>
+      <div class="ghead"><span class="turnmark" aria-hidden="true">${acting ? '▶' : done ? '✓' : ''}</span>
+        <span class="cname">${esc(u.name)} <small>${u.members.length} act together</small></span>${pickButtons(u)}</div>
+      <ol class="gmembers">${u.members.map(m => rowHtml(m, -1, { status, member: true })).join('')}</ol>
+    </li>`;
+  }).join('');
+}
+
+function rowHtml(c, i, opt = null) {
   const r = rec(c); const e = cs.enc;
-  const cur = e.started && i === e.turn;
+  const cur = opt ? (opt.status === 'acting' && !opt.member) : (e.started && i === e.turn);
+  const mark = opt ? (opt.member ? '' : opt.status === 'acting' ? '▶' : opt.status === 'acted' ? '✓' : '') : (cur ? '▶' : '');
+  const initCell = opt ? '' : null;
   if (c.kind === 'lair') {
     return `<li class="crow lair" ${cur ? 'aria-current="step"' : ''} ${c.cid === cs.sel ? 'data-sel="1"' : ''}>
       <button type="button" class="cpick" data-c="sel" data-cid="${c.cid}">
-        <span class="turnmark" aria-hidden="true">${cur ? '▶' : ''}</span>
-        <span class="cinit">20</span>
+        <span class="turnmark" aria-hidden="true">${mark}</span>
+        <span class="cinit">${initCell ?? 20}</span>
         <span class="cname">${esc(c.name)}</span>
         <span class="cac"></span><span class="chp"><i>${c.lastUsed ? `used round ${c.lastUsed.round}` : 'lair'}</i></span>
-      </button></li>`;
+      </button>${opt?.picks || ''}</li>`;
   }
   const hpPct = r.maxHp ? Math.max(0, Math.min(100, Math.round(r.hp / r.maxHp * 100))) : 0;
   const state = r.exh >= 6 ? 'dead' : (r.hp <= 0 ? (c.kind === 'pc' ? 'dying' : 'down') : '');
   const chips = [...(r.conds || []), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : '', ...usedRecharges(c).map(u => `${u.name} spent`)].filter(Boolean);
-  return `<li class="crow ${c.kind} ${state}" ${cur ? 'aria-current="step"' : ''} ${c.cid === cs.sel ? 'data-sel="1"' : ''}>
+  return `<li class="crow ${c.kind} ${state} ${opt ? 'st-' + opt.status : ''} ${opt?.member ? 'member' : ''}" ${cur ? 'aria-current="step"' : ''} ${c.cid === cs.sel ? 'data-sel="1"' : ''}>
     <button type="button" class="cpick" data-c="sel" data-cid="${c.cid}">
-      <span class="turnmark" aria-hidden="true">${cur ? '▶' : ''}</span>
-      <span class="cinit">${e.started || c.init != null ? (c.init ?? '–') : ''}</span>
+      <span class="turnmark" aria-hidden="true">${mark}</span>
+      <span class="cinit">${initCell ?? (e.started || c.init != null ? (c.init ?? '–') : '')}</span>
       <span class="cname">${esc(nameOf(c))}${state === 'down' ? ' <small>down</small>' : state === 'dying' ? ' <small>at 0 HP</small>' : state === 'dead' ? ' <small>dead</small>' : ''}</span>
       <span class="cac">AC ${esc(r.ac)}</span>
       <span class="chp"><b>${r.hp}</b>/${r.maxHp}${r.temp ? ` <i>+${r.temp}</i>` : ''}</span>
       <span class="hpbar" aria-hidden="true"><span style="width:${hpPct}%"></span></span>
       ${chips.length ? `<span class="chips">${chips.map(x => `<span>${esc(x)}</span>`).join('')}</span>` : ''}
     </button>
-    ${!e.started ? `<label class="initin">Init<input type="number" inputmode="numeric" data-c="init" data-cid="${c.cid}" value="${c.init ?? ''}" placeholder="${c.kind === 'monster' ? sign(c.bonus) : ''}" aria-label="Initiative for ${esc(nameOf(c))}"></label>` : ''}
+    ${opt ? (opt.picks || '') : ''}
+    ${!opt && !e.started ? `<label class="initin">Init<input type="number" inputmode="numeric" data-c="init" data-cid="${c.cid}" value="${c.init ?? ''}" placeholder="${c.kind === 'monster' ? sign(c.bonus) : ''}" aria-label="Initiative for ${esc(nameOf(c))}"></label>` : ''}
   </li>`;
 }
 
 function detailHtml() {
   const c = selected();
-  if (!c) return `<div class="empty"><h2>Run a fight</h2><p>Your party joins every combat automatically. Add monsters, enter everyone's initiative, then Start combat.</p></div>`;
+  if (!c) return `<div class="empty"><h2>Run a fight</h2><p>Your party joins every combat automatically. Add monsters, ${activeMode() ? 'then Start combat and pick who goes first.' : "enter everyone's initiative, then Start combat."}</p></div>`;
   const r = rec(c); const e = cs.enc;
   const sections = [];
   if (c.kind === 'lair') return lairDetailHtml(c);
@@ -376,7 +502,7 @@ function detailHtml() {
   sections.push(`<div class="dhead">
     <button class="btn back" type="button" data-c="back">Back to order</button>
     <h2>${esc(nameOf(c))}</h2>
-    <p class="dsub">${c.kind === 'pc' ? `Player · Passive Perception ${esc(r.passive)}` : `Initiative bonus ${sign(c.bonus)}`}${e.started ? ` · Initiative <input class="mini" type="number" inputmode="numeric" data-c="init" data-cid="${c.cid}" value="${c.init ?? ''}" aria-label="Initiative">` : ''}</p>
+    <p class="dsub">${c.kind === 'pc' ? `Player · Passive Perception ${esc(r.passive)}` : (activeMode() ? 'Monster' : `Initiative bonus ${sign(c.bonus)}`)}${e.started && !activeMode() ? ` · Initiative <input class="mini" type="number" inputmode="numeric" data-c="init" data-cid="${c.cid}" value="${c.init ?? ''}" aria-label="Initiative">` : ''}</p>
   </div>`);
 
   // HP
@@ -568,6 +694,9 @@ function onClick(e) {
     case 'start': return startCombat();
     case 'next': return nextTurn(1);
     case 'prev': return nextTurn(-1);
+    case 'pick': return pickNext(b.dataset.k, b.dataset.how);
+    case 'endturn': return endTurnActive();
+    case 'undo': return undoActive();
     case 'end': return endCombat();
     case 'encounters': return ctx.openEncounters();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
