@@ -5,6 +5,7 @@ import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encount
 import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
 const SRD_VERSION = 1;
+const TAG_HOURS = 24;
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const CRS = ['0', '1/8', '1/4', '1/2', ...Array.from({ length: 30 }, (_, i) => String(i + 1))];
 const ABILS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -211,7 +212,10 @@ function renderList() {
   $('#clearFilters').hidden = !filtersActive();
   listEl.innerHTML = items.map(m => {
     const mine = !m.id.startsWith('srd-');
-    const tag = (m.dead ? '<span class="tag deadtag">Dead</span>' : '') + (mine ? '<span class="tag">Mine</span>' : m.edited ? '<span class="tag">Edited</span>' : '');
+    // Mine / Edited are reminders for recent work: shown for 24 hours, then hidden (the filter still knows)
+    const fresh = t => t && now() - t < TAG_HOURS * 3600000;
+    const tag = (m.dead ? '<span class="tag deadtag">Dead</span>' : '')
+      + (mine ? (fresh(m.created || m.updated) ? '<span class="tag">Mine</span>' : '') : (m.edited && fresh(m.updated) ? '<span class="tag">Edited</span>' : ''));
     return `<li${m.dead ? ' class="isdead"' : ''}><button type="button" data-id="${esc(m.id)}" aria-current="${m.id === state.selectedId}">
       <span class="nm">${esc(m.name)}${tag}</span>
       <span class="cr">${esc(m.cr)}<small>CR</small></span>
