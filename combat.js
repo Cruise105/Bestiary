@@ -569,11 +569,15 @@ export function openPlayerView() {
   const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
   const base = location.pathname.replace(/[^/]*$/, '');
   if (standalone && /Android/i.test(navigator.userAgent)) {
-    // The installed app can't open a second window of itself on Android, so hand the page to Chrome,
-    // which opens as its own window in DeX. Both share the same storage, so updates still flow.
+    // Android keeps the app's own pages inside the app, so point the way to Chrome instead of taking over
     const url = `${location.origin}${base}player.html`;
-    location.href = `intent://${location.host}${base}player.html#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-    ctx.toast('Player view opening in Chrome. Drag that window to the TV and tap it for full screen.');
+    ctx.choice('Open the player view in Chrome',
+      `In DeX, open Chrome on the TV and go to ${url}. Bookmark it, and next time it's one tap. It updates from this tracker automatically.`,
+      [['copy', 'Copy link']]).then(async v => {
+        if (v !== 'copy') return;
+        try { await navigator.clipboard.writeText(url); ctx.toast('Link copied. Paste it into Chrome on the TV.'); }
+        catch { ctx.toast(`Copy didn't work here. The address is ${url}`); }
+      });
     return;
   }
   const w = window.open('player.html', 'bestiaryPlayerView');

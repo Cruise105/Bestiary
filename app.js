@@ -33,6 +33,10 @@ const state = {
 };
 
 /* ---------- helpers ---------- */
+// A monster can list several books: "Princes of the Apocalypse; Mordenkainen's Tome of Foes p. 203"
+const sourcesOf = m => String(m.source || '').split(/\s*;\s*/).map(s => s.trim()).filter(Boolean);
+// The book itself, without a page reference, for filtering
+const sourceBook = s => s.replace(/[\s,(]*(?:p\.?|pg\.?|page|pp\.?)\s*\d+(?:\s*[-–]\s*\d+)?\)?\s*$/i, '').trim();
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const mod = n => { const v = Math.floor((n - 10) / 2); return (v >= 0 ? '+' : '') + v; };
 const fmtFormula = f => String(f || '').replace(/\s+/g, '').replace(/([+-])/g, ' $1 ');
@@ -154,7 +158,7 @@ async function saveSettings() {
 /* ---------- filters + list ---------- */
 function buildFilterOptions() {
   const types = [...new Set(state.monsters.map(m => (m.type || '').toLowerCase()).filter(Boolean))].sort();
-  const sources = [...new Set(state.monsters.map(m => m.source).filter(Boolean))].sort();
+  const sources = [...new Set(state.monsters.flatMap(m => sourcesOf(m).map(sourceBook)).filter(Boolean))].sort();
   fill($('#fType'), 'All types', types);
   fill($('#fSource'), 'All sources', [...sources, '__mine']);
   fill($('#fSize'), 'All sizes', SIZES);
@@ -182,7 +186,7 @@ function filtered() {
   let out = state.monsters.filter(m => {
     if (q && !(`${m.name} ${m.tags} ${m.source} ${m.type} ${m.subtype}`.toLowerCase().includes(q))) return false;
     if (type && (m.type || '').toLowerCase() !== type) return false;
-    if (src === '__mine' ? !(m.edited || !m.id.startsWith('srd-')) : (src && m.source !== src)) return false;
+    if (src === '__mine' ? !(m.edited || !m.id.startsWith('srd-')) : (src && !sourcesOf(m).some(s => sourceBook(s) === src))) return false;
     if (size && m.size !== size) return false;
     if (m.dead && $('#fHideDead').checked) return false;
     const c = crNum(m.cr);
@@ -220,7 +224,7 @@ function renderList() {
     return `<li${m.dead ? ' class="isdead"' : ''}><button type="button" data-id="${esc(m.id)}" aria-current="${m.id === state.selectedId}">
       <span class="nm">${esc(m.name)}${tag}</span>
       <span class="cr">${esc(m.cr)}<small>CR</small></span>
-      <span class="meta">${esc(m.size)} ${esc(m.type)} · ${esc(m.source || 'No source')}</span>
+      <span class="meta">${esc(m.size)} ${esc(m.type)} · ${esc(sourcesOf(m).map(sourceBook).join(', ') || 'No source')}</span>
     </button></li>`;
   }).join('');
 }
@@ -274,7 +278,7 @@ function renderDetail() {
     </div>
     ${state.tab === 'lore' ? loreHtml(m) : `${statBlockHtml(m)}
     ${m.notes ? `<div class="notes">${fmt(m.notes)}</div>` : ''}`}
-    <p class="sb-foot">${esc(m.source || 'No source')}${m.tags ? ` · Tags: ${esc(m.tags)}` : ''}${m.updated ? ` · Edited ${new Date(m.updated).toLocaleDateString()}` : ''}</p>
+    <p class="sb-foot">${sourcesOf(m).length > 1 ? 'Sources: ' : ''}${esc(sourcesOf(m).join('; ') || 'No source')}${m.tags ? ` · Tags: ${esc(m.tags)}` : ''}${m.updated ? ` · Edited ${new Date(m.updated).toLocaleDateString()}` : ''}</p>
   </div>`;
 }
 
@@ -443,7 +447,8 @@ function renderEditor() {
     <h2>${m._isNew ? 'New monster' : 'Edit ' + esc(m.name)}</h2>
     <fieldset><legend>Basics</legend><div class="grid">
       ${inp('name', 'Name', m.name, 'required')}
-      ${inp('source', 'Source', m.source, 'list="sourceList"')}
+      <label class="f wide">Sources <span class="fieldhint">separate books with a semicolon; page numbers optional</span>
+        <input class="field" data-k="source" value="${esc(m.source)}" list="sourceList" placeholder="Princes of the Apocalypse; Mordenkainen's Tome of Foes p. 203"></label>
       <label class="f">Size<select class="field" data-k="size">${SIZES.map(s => `<option ${s === m.size ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       ${inp('type', 'Type', m.type, 'placeholder="giant"')}
       ${inp('subtype', 'Subtype', m.subtype, 'placeholder="optional"')}
