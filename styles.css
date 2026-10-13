@@ -404,3 +404,6 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 
 .deadbanner span{font-family:var(--serif);font-style:italic;font-size:1.05rem}
 .deadbanner .deaddate{margin-left:auto;min-height:34px;padding:0 12px;background:transparent;border-color:currentColor;color:inherit;font-size:.88rem}
+
+.pvhide{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.92rem}
+.pvhide input{width:20px;height:20px;accent-color:var(--accent)}

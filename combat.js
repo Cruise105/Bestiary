@@ -446,6 +446,7 @@ export function render() {
            <button class="btn primary big" type="button" data-c="start">Start combat</button>`)}
       <span class="spacer"></span>
       ${(e.sitOut || []).map(id => pc(id)).filter(Boolean).map(p => `<button class="btn ghost" type="button" data-c="return" data-pid="${p.id}">Bring back ${esc(p.name)}</button>`).join('')}
+      <button class="btn" type="button" data-c="playerview">Player view</button>
       <button class="btn" type="button" data-c="encounters">Encounters</button>
       ${e.combatants.some(c => c.kind === 'monster') ? '<button class="btn" type="button" data-c="saveenc">Save encounter</button>' : ''}
       <button class="btn" type="button" data-c="addmon">Add monsters</button>
@@ -456,6 +457,79 @@ export function render() {
       <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${(AI ? activeListHtml() : e.combatants.map((c, i) => rowHtml(c, i)).join('')) || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
       <section class="cdetail" aria-live="polite">${detailHtml()}</section>
     </div>`;
+  publishPlayerView();
+}
+
+/* ---------- Player view (second screen) ---------- */
+const PV_KEY = 'bestiary-player';
+let pvChannel = null;
+try { pvChannel = new BroadcastChannel(PV_KEY); } catch { /* older browser: storage event still works */ }
+
+function stageOf(c) {
+  const r = rec(c);
+  if (c.kind === 'pc' && r.hp <= 0) {
+    if (r.exh >= 6 || r.death?.f >= 3) return 'dead';
+    return r.death?.s >= 3 ? 'stable' : 'dying';
+  }
+  if (r.hp <= 0) return 'down';
+  const p = r.hp / (r.maxHp || 1);
+  if (p >= 1) return 'unhurt';
+  if (p > 0.5) return 'wounded';
+  if (p > 0.25) return 'bloodied';
+  return 'near';
+}
+
+function pvName(c, hiddenIndex) {
+  if (c.kind === 'monster' && c.hideName) return `Unknown creature${hiddenIndex.count > 1 ? ' ' + String.fromCharCode(65 + hiddenIndex.map.get(c.cid)) : ''}`;
+  return nameOf(c);
+}
+
+function pvEntry(c, hid, extra = {}) {
+  const r = rec(c);
+  return {
+    name: pvName(c, hid), side: c.kind === 'pc' ? 'party' : 'foe', stage: stageOf(c),
+    conds: [...(r.conds || []), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : ''].filter(Boolean),
+    ...extra,
+  };
+}
+
+function publishPlayerView() {
+  const e = cs.enc;
+  const hiddenList = e.combatants.filter(x => x.kind === 'monster' && x.hideName);
+  const hid = { count: hiddenList.length, map: new Map(hiddenList.map((x, i) => [x.cid, i])) };
+  const snap = { at: Date.now(), started: !!e.started, round: e.round || 0, mode: activeMode() ? 'active' : 'rolls', rows: [], up: '', lair: false };
+  if (activeMode()) {
+    const a = e.active;
+    for (const u of units()) {
+      if (u.members[0].kind === 'lair') continue;
+      const status = a?.current === u.key ? 'current' : a?.acted?.includes(u.key) ? 'acted' : '';
+      if (u.group) {
+        const members = u.members.map(m => pvEntry(m, hid));
+        const anyHidden = u.members.some(m => m.hideName);
+        snap.rows.push({ name: anyHidden ? 'Unknown creatures' : u.name.replace(/ group$/, 's'), side: 'foe', group: true, status, members });
+      } else snap.rows.push(pvEntry(u.members[0], hid, { status }));
+      if (status === 'current') snap.up = snap.rows[snap.rows.length - 1].name;
+    }
+    if (e.started && !a?.current) snap.up = '';
+  } else {
+    e.combatants.forEach((x, i) => {
+      const current = e.started && i === e.turn;
+      if (x.kind === 'lair') { if (current) snap.lair = true; return; }
+      const row = pvEntry(x, hid, { status: current ? 'current' : '' });
+      snap.rows.push(row);
+      if (current) snap.up = row.name;
+    });
+  }
+  const json = JSON.stringify(snap);
+  try { localStorage.setItem(PV_KEY, json); } catch { /* storage blocked */ }
+  try { pvChannel?.postMessage(snap); } catch { /* ignore */ }
+}
+
+export function openPlayerView() {
+  publishPlayerView();
+  const w = window.open('player.html', 'bestiaryPlayerView');
+  if (!w) ctx.toast('The player view was blocked from opening. Allow pop-ups for this app, or open player.html from your app address.');
+  else ctx.toast('Player view opened. Drag that window to the TV and make it full screen.');
 }
 
 function activeListHtml() {
@@ -587,6 +661,7 @@ function detailHtml() {
     if (m?.tactics) sections.push(`<div class="dbox tacticsbox"><h3>Tactics</h3><p class="desc" style="margin:0">${ctx.fmt(m.tactics)}</p></div>`);
     sections.push(`<div class="dbox sbwrap">${m ? ctx.statBlockHtml(m) : '<p class="note">This monster is no longer in your library.</p>'}</div>`);
   }
+  if (c.kind === 'monster') sections.push(`<div class="drow"><label class="chk pvhide"><input type="checkbox" data-c="hidename" ${c.hideName ? 'checked' : ''}> Hide its name on the player view (shows as "Unknown creature")</label></div>`);
   sections.push(`<div class="drow"><button class="btn danger" type="button" data-c="remove">${c.kind === 'pc' ? 'Sit out this combat' : 'Remove from combat'}</button></div>`);
   return sections.join('');
 }
@@ -713,6 +788,7 @@ function onClick(e) {
     case 'undo': return undoActive();
     case 'end': return endCombat();
     case 'encounters': return ctx.openEncounters();
+    case 'playerview': return openPlayerView();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
     case 'party': renderParty(); return document.querySelector('#partyDlg').showModal();
     case 'addmon': document.querySelector('#addQ').value = ''; renderAddList(); document.querySelector('#addDlg').showModal(); return;
@@ -776,6 +852,7 @@ function onChange(e) {
     return;
   }
   const c = selected(); if (!c) return; const r = rec(c);
+  if (act === 'hidename') { c.hideName = el.checked; persist(); render(); return; }
   if (act === 'setac') r.ac = +el.value || 0;
   if (act === 'setmax') { const v = Math.max(1, +el.value || 1); if (r.hp > v || r.hp === r.maxHp) r.hp = v; r.maxHp = v; }
   if (act === 'pcnotes') r.notes = el.value;

@@ -33,6 +33,10 @@ Settings → **Google Drive sync** → **Connect Google Drive**, once on each de
 
 The manual backup file still works as a safety net.
 
+## Player view on a TV
+
+In the combat tracker, tap **Player view**. A second window opens showing everyone in the fight with HP as stages (Unhurt, Wounded, Bloodied, Near death, Down) and no numbers. With Samsung DeX on the TV, drag that window to the TV and tap it for full screen. It updates instantly from the tracker and works offline.
+
 ## Updating the app later
 
 When I send you new files, upload them to the same repository the same way (files with the same names replace the old ones). Give GitHub a minute or two, then open the app while online. It downloads the update and refreshes itself within a few seconds. Your monsters are not touched by updates. On the PC, if an update doesn't show up, press **Ctrl+Shift+R**.

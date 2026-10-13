@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d1117">
+<title>Bestiary · Player view</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>
+@font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-700-normal.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-800-normal.woff2) format("woff2");font-weight:800;font-display:swap}
+@font-face{font-family:"Alegreya";src:url(fonts/alegreya-latin-400-italic.woff2) format("woff2");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:"Alegreya Sans";src:url(fonts/alegreya-sans-latin-500-normal.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Alegreya Sans";src:url(fonts/alegreya-sans-latin-700-normal.woff2) format("woff2");font-weight:700;font-display:swap}
+
+:root{
+  --bg:#0d1117; --row:#161d27; --line:#2a3544; --text:#e6ebf0; --muted:#8f9cad;
+  --foe:#d0606c; --party:#7fa7d6; --seg-off:#252f3c;
+  --serif:"Alegreya",Georgia,serif; --sans:"Alegreya Sans",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-variant-numeric:lining-nums;overflow:hidden;cursor:default}
+.wrap{height:100vh;display:grid;grid-template-rows:auto 1fr;padding:2.2vh 2.6vw;gap:2vh}
+
+header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(--line);padding-bottom:1.4vh}
+.round{font:800 clamp(28px,4.4vh,60px)/1 var(--serif);white-space:nowrap}
+.up{font:500 clamp(20px,3.2vh,44px)/1.1 var(--sans);color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up b{font:700 1.1em var(--serif);color:var(--text)}
+
+.list{list-style:none;margin:0;padding:0;column-gap:2.4vw}
+.list > .row{break-inside:avoid;margin-bottom:1.1vh}
+.row{display:grid;grid-template-columns:2.6vw minmax(0,1fr) auto;align-items:center;gap:.4vh 1.2vw;padding:1.1vh 1.2vw 1.1vh .6vw;background:var(--row);border-radius:8px;border-left:.55vw solid var(--foe);min-height:6.4vh}
+.row.party{border-left-color:var(--party)}
+.mark{font-size:clamp(18px,3vh,40px);text-align:center;color:var(--muted)}
+.row.current{outline:3px solid var(--text);outline-offset:0;background:#1e2733}
+.row.current .mark{color:var(--text)}
+.row.acted{opacity:.5}
+.name{font:700 clamp(20px,3.3vh,46px)/1.1 var(--serif);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage{display:flex;align-items:center;gap:1vw;justify-self:end}
+.segs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;width:clamp(110px,13vw,260px)}
+.segs i{height:clamp(10px,1.6vh,22px);border-radius:3px;background:var(--seg-off)}
+.row.foe .segs i.on{background:var(--foe)}
+.row.party .segs i.on{background:var(--party)}
+.word{font:700 clamp(16px,2.4vh,34px)/1 var(--sans);min-width:7.5em;text-align:right;letter-spacing:.01em}
+.row.s-down .name,.row.s-dead .name{text-decoration:line-through;opacity:.6}
+.row.s-dying .word,.row.s-dead .word,.row.s-down .word{color:var(--foe)}
+.conds{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px}
+.conds span{font:500 clamp(13px,1.8vh,24px)/1.3 var(--sans);padding:0 .6em;border:1px solid var(--line);border-radius:999px;color:var(--muted);text-transform:capitalize}
+.members{grid-column:2/-1;list-style:none;margin:.6vh 0 0;padding:0;display:grid;gap:.6vh}
+.members .row{background:transparent;padding:.3vh 0;min-height:0;border:0;grid-template-columns:minmax(0,1fr) auto}
+.members .name{font-size:clamp(17px,2.6vh,36px)}
+
+.idle{display:grid;place-items:center;text-align:center;color:var(--muted);font:500 clamp(20px,3vh,40px)/1.4 var(--sans)}
+.idle b{display:block;font:800 clamp(34px,6vh,80px)/1.1 var(--serif);color:var(--text);margin-bottom:1vh}
+.lairban{margin-left:auto;font:italic 400 clamp(18px,2.8vh,38px) var(--serif);color:var(--foe)}
+.hint{position:fixed;right:1.4vw;bottom:1.2vh;font-size:14px;color:var(--muted);opacity:.7;transition:opacity .6s}
+.hint.gone{opacity:0}
+@media (prefers-reduced-motion:reduce){.hint{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="idle"><div><b>Waiting for combat</b>Start a fight in the Bestiary's combat tracker.</div></div>
+</div>
+<p class="hint" id="hint">Tap anywhere for full screen</p>
+<script src="player.js"></script>
+</body>
+</html>
