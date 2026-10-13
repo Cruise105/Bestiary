@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { initSync } from './sync.js';
 import { initConditions, loadConditions, openConditions, conditionsForBackup, mergeConditionsFromBackup } from './conditions.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
@@ -285,7 +285,10 @@ function loreHtml(m) {
   if (!hasLore(m)) return `<div class="lore empty-lore"><p>No lore yet. Tap Edit to add a picture, combat tactics, or background for ${esc(m.name)}.</p></div>`;
   queueMicrotask(() => showImage(m, '#loreImg'));
   return `${deadBanner(m)}<article class="lore">
-    ${m.image ? `<figure class="lorepic"><button type="button" class="picbtn" data-act="bigpic" aria-label="View picture full size"><img id="loreImg" alt="${esc(m.name)}"></button></figure>` : ''}
+    ${m.image ? `<figure class="lorepic"><button type="button" class="picbtn" data-act="bigpic" aria-label="View picture full size"><img id="loreImg" alt="${esc(m.name)}"></button>
+      <figcaption class="picactions">${pictureShowingFor(m.id)
+        ? '<button class="btn primary" type="button" data-act="hidepic">Hide picture</button><span class="note">On the player view now</span>'
+        : '<button class="btn" type="button" data-act="showpic">Show to players</button><span class="note">Shows on the player view for up to 90 seconds.</span>'}</figcaption></figure>` : ''}
     ${m.tactics ? `<section class="lorebox tactics"><h3>Tactics</h3><p class="desc">${fmt(m.tactics)}</p></section>` : ''}
     ${m.description ? `<section class="lorebox"><h3>Lore</h3><div class="desc">${fmt(m.description)}</div></section>` : ''}
   </article>`;
@@ -665,6 +668,8 @@ async function onDetailAction(act, btn) {
       break;
     }
     case 'tab': state.tab = btn.dataset.tab; renderDetail(); break;
+    case 'showpic': return showPictureToPlayers(m, m.name);
+    case 'hidepic': return hidePictureFromPlayers();
     case 'deaddate': {
       const when = await promptBox(`When did ${m.name} die?`, 'In-game date (leave blank for none)', m.dead.when || '', 'e.g. 13th of Solentide, 297');
       if (when === null) return;
@@ -892,6 +897,7 @@ async function start() {
     onChange: updateBadge,
     pushDetail: () => { if (isNarrow()) history.pushState({ view: 'cdetail' }, ''); },
     openEncounters, saveEncounter: saveFromCombat, openConditions,
+    onPicture: () => { if (!state.editing && state.tab === 'lore') renderDetail(); },
   });
   initConditions({ toast, confirmBox, onChange: () => renderCombat(), renameEverywhere: renameCondition });
   initEncounters({

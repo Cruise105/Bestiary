@@ -58,6 +58,10 @@ header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(-
 .idle{display:grid;place-items:center;text-align:center;color:var(--muted);font:500 clamp(20px,3vh,40px)/1.4 var(--sans)}
 .idle b{display:block;font:800 clamp(34px,6vh,80px)/1.1 var(--serif);color:var(--text);margin-bottom:1vh}
 .lairban{margin-left:auto;font:italic 400 clamp(18px,2.8vh,38px) var(--serif);color:var(--foe)}
+.pic{position:fixed;inset:0;margin:0;background:#05080c;display:grid;grid-template-rows:1fr auto;place-items:center;padding:3vh 3vw;gap:2vh;z-index:5}
+.pic[hidden]{display:none}
+.pic img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;min-height:0}
+.pic figcaption{font:800 clamp(28px,5vh,72px)/1.1 var(--serif);text-align:center}
 .hint{position:fixed;right:1.4vw;bottom:1.2vh;font-size:14px;color:var(--muted);opacity:.7;transition:opacity .6s}
 .hint.gone{opacity:0}
 .backbtn{position:fixed;left:1.4vw;bottom:1.2vh;padding:10px 16px;border:1px solid var(--line);border-radius:8px;background:var(--row);color:var(--text);font:700 16px var(--sans);text-decoration:none}
@@ -68,6 +72,7 @@ header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(-
 <div class="wrap" id="wrap">
   <div class="idle"><div><b>Waiting for combat</b>Start a fight in the Bestiary's combat tracker.</div></div>
 </div>
+<figure class="pic" id="pic" hidden><img alt=""><figcaption></figcaption></figure>
 <p class="hint" id="hint">Tap anywhere for full screen</p>
 <a class="backbtn" id="backBtn" href="./" hidden>Back to tracker</a>
 <script src="player.js"></script>

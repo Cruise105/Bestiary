@@ -428,3 +428,6 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .rules{margin:4px 0 0;padding-left:1.2em;line-height:1.5}
 #condFoot{justify-content:flex-start}
 :root[data-theme="red"] .arule{background:#000;border-left-width:4px}
+
+.picactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.picactions .note{margin:0}

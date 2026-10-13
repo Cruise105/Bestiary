@@ -2,6 +2,22 @@
 // Fed by the combat tracker running in another window on the same device.
 (function () {
   const KEY = 'bestiary-player';
+  const IMG_KEY = 'bestiary-player-img';
+  let imgAt = 0, imgTimer = null;
+  const pic = document.getElementById('pic');
+
+  function showImg(m) {
+    if (!m || m.at <= imgAt) return;
+    imgAt = m.at;
+    clearTimeout(imgTimer);
+    const left = (m.until || 0) - Date.now();
+    if (!m.data || left <= 0) { pic.hidden = true; pic.querySelector('img').removeAttribute('src'); return; }
+    pic.querySelector('img').src = m.data;
+    pic.querySelector('figcaption').textContent = m.name || '';
+    pic.hidden = false;
+    imgTimer = setTimeout(() => { pic.hidden = true; }, Math.min(left, 90000));
+  }
+  function readImg() { try { showImg(JSON.parse(localStorage.getItem(IMG_KEY) || 'null')); } catch { /* ignore */ } }
   const wrap = document.getElementById('wrap');
   const STAGES = {
     unhurt: ['Unhurt', 4], wounded: ['Wounded', 3], bloodied: ['Bloodied', 2], near: ['Near death', 1],
@@ -64,10 +80,10 @@
     try { take(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch { /* storage blocked */ }
   }
 
-  try { new BroadcastChannel(KEY).onmessage = e => take(e.data); } catch { /* fall back to storage events */ }
-  window.addEventListener('storage', e => { if (e.key === KEY) readStored(); });
-  setInterval(readStored, 1500); // safety net if a message is missed
-  readStored();
+  try { new BroadcastChannel(KEY).onmessage = e => (e.data?.type === 'img' ? showImg(e.data) : take(e.data)); } catch { /* fall back to storage events */ }
+  window.addEventListener('storage', e => { if (e.key === KEY) readStored(); if (e.key === IMG_KEY) readImg(); });
+  setInterval(() => { readStored(); readImg(); }, 1500); // safety net if a message is missed
+  readStored(); readImg();
 
   // Keep the TV awake while this is open
   let lock = null;

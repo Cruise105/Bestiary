@@ -534,6 +534,36 @@ function publishPlayerView() {
   try { pvChannel?.postMessage(snap); } catch { /* ignore */ }
 }
 
+// Show a monster's picture on the player view for up to 90 seconds
+const PV_IMG_KEY = 'bestiary-player-img';
+const PIC_SECONDS = 90;
+let picShowing = null; // { id, until }
+let picTimer = null;
+
+export async function showPictureToPlayers(m, caption) {
+  const rec = await db.getImage(m.id);
+  if (!rec) return ctx.toast(`${m.name} has no picture yet. Add one on its Lore tab.`);
+  const until = Date.now() + PIC_SECONDS * 1000;
+  const msg = { type: 'img', at: Date.now(), until, id: m.id, name: caption || m.name, data: rec.data };
+  try { localStorage.setItem(PV_IMG_KEY, JSON.stringify(msg)); } catch { /* too big or blocked: the live message still goes out */ }
+  try { pvChannel?.postMessage(msg); } catch { /* ignore */ }
+  picShowing = { id: m.id, until };
+  clearTimeout(picTimer);
+  picTimer = setTimeout(() => { picShowing = null; render(); ctx.onPicture?.(); }, PIC_SECONDS * 1000);
+  render(); ctx.onPicture?.();
+  ctx.toast(`Showing ${caption || m.name} to the players for up to ${PIC_SECONDS} seconds.`);
+}
+
+export function hidePictureFromPlayers() {
+  const msg = { type: 'img', at: Date.now(), until: 0 };
+  try { localStorage.setItem(PV_IMG_KEY, JSON.stringify(msg)); } catch { /* ignore */ }
+  try { pvChannel?.postMessage(msg); } catch { /* ignore */ }
+  picShowing = null; clearTimeout(picTimer);
+  render(); ctx.onPicture?.();
+}
+
+export const pictureShowingFor = id => !!(picShowing && picShowing.id === id && picShowing.until > Date.now());
+
 export function openPlayerView() {
   publishPlayerView();
   const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
@@ -686,6 +716,12 @@ function detailHtml() {
     if (m?.tactics) sections.push(`<div class="dbox tacticsbox"><h3>Tactics</h3><p class="desc" style="margin:0">${ctx.fmt(m.tactics)}</p></div>`);
     sections.push(`<div class="dbox sbwrap">${m ? ctx.statBlockHtml(m) : '<p class="note">This monster is no longer in your library.</p>'}</div>`);
   }
+  if (c.kind === 'monster') {
+    const mm = ctx.getMonster(c.monsterId);
+    if (mm?.image) sections.push(`<div class="drow">${pictureShowingFor(mm.id)
+      ? '<button class="btn primary" type="button" data-c="hidepic">Hide picture</button><span class="note">On the player view now</span>'
+      : '<button class="btn" type="button" data-c="showpic">Show picture to players</button>'}</div>`);
+  }
   if (c.kind === 'monster') sections.push(`<div class="drow"><label class="chk pvhide"><input type="checkbox" data-c="hidename" ${c.hideName ? 'checked' : ''}> Hide its name on the player view (shows as "Unknown creature")</label></div>`);
   sections.push(`<div class="drow"><button class="btn danger" type="button" data-c="remove">${c.kind === 'pc' ? 'Sit out this combat' : 'Remove from combat'}</button></div>`);
   return sections.join('');
@@ -815,6 +851,9 @@ function onClick(e) {
     case 'encounters': return ctx.openEncounters();
     case 'condref': return ctx.openConditions((r?.conds || [])[0]);
     case 'playerview': return openPlayerView();
+    case 'showpic': { const sc = selected(); const mm = sc && ctx.getMonster(sc.monsterId); if (!mm) return;
+      return showPictureToPlayers(mm, sc.hideName ? 'Unknown creature' : mm.name); }
+    case 'hidepic': return hidePictureFromPlayers();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
     case 'party': renderParty(); return document.querySelector('#partyDlg').showModal();
     case 'addmon': document.querySelector('#addQ').value = ''; renderAddList(); document.querySelector('#addDlg').showModal(); return;
