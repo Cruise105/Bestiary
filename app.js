@@ -1,6 +1,7 @@
 import { db } from './db.js';
-import { initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { initSync } from './sync.js';
+import { initConditions, loadConditions, openConditions, conditionsForBackup, mergeConditionsFromBackup } from './conditions.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
 import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
@@ -706,7 +707,7 @@ async function buildBackupData({ images = false } = {}) {
   const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
   const pics = [];
   if (images) for (const m of mine) if (m.image) { const rec = await db.getImage(m.id); if (rec) pics.push(rec); }
-  return { images: pics, app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup() };
+  return { images: pics, app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup(), conditions: conditionsForBackup() };
 }
 
 // Merge another device's data in; newest edit wins. Returns a short summary.
@@ -735,6 +736,7 @@ async function mergeBackupData(data) {
   }
   const partyChanged = await mergePartyFromBackup(data.party);
   const encN = await mergeEncountersFromBackup(data.encounters);
+  const condN = await mergeConditionsFromBackup(data.conditions);
   if (added || updated || removed) { setMonsters(await db.all()); if (!state.editing) renderDetail(); }
   if (partyChanged || encN) renderCombat();
   const parts = [];
@@ -743,6 +745,7 @@ async function mergeBackupData(data) {
   if (removed) parts.push(`${removed} removed`);
   if (partyChanged) parts.push('party updated');
   if (encN) parts.push(`${encN} encounter${encN === 1 ? '' : 's'} updated`);
+  if (condN) parts.push(`${condN} condition${condN === 1 ? '' : 's'} updated`);
   if (picsN) { parts.push(`${picsN} picture${picsN === 1 ? '' : 's'}`); if (!state.editing) renderDetail(); }
   return { parts, kept, changed: parts.length > 0 };
 }
@@ -845,6 +848,7 @@ function wire() {
     const b = e.target.closest('button'); if (!b) return;
     state.settings.hpMode = b.dataset.hp; applyTheme(); saveSettings(); if (!state.editing) renderDetail();
   });
+  $('#condMgrBtn').addEventListener('click', () => openConditions());
   $('#exportBtn').addEventListener('click', exportBackup);
   $('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());
   $('#restoreFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; });
@@ -887,8 +891,9 @@ async function start() {
     settings: () => state.settings,
     onChange: updateBadge,
     pushDetail: () => { if (isNarrow()) history.pushState({ view: 'cdetail' }, ''); },
-    openEncounters, saveEncounter: saveFromCombat,
+    openEncounters, saveEncounter: saveFromCombat, openConditions,
   });
+  initConditions({ toast, confirmBox, onChange: () => renderCombat(), renameEverywhere: renameCondition });
   initEncounters({
     toast, confirmBox, choice,
     getMonster: id => state.byId.get(id),
@@ -898,6 +903,7 @@ async function start() {
   });
   try {
     await loadAll();
+    await loadConditions();
     await loadCombat();
     await loadEncounters();
     updateBadge();

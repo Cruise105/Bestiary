@@ -3,6 +3,7 @@
 // the players' 5th/6th-level free-cast counters.
 import { db } from './db.js';
 import { HP_BY_CR } from './parser.js';
+import { STANDARD, customConditions, conditionInfo, showOnPlayerView } from './conditions.js';
 
 const CONDITIONS = ['blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious'];
@@ -55,6 +56,14 @@ export async function mergePartyFromBackup(p) {
   render();
   return true;
 }
+// Custom condition renamed (or deleted when newName is null): update everyone carrying it
+export function renameCondition(oldName, newName) {
+  const fix = r => { if (!r?.conds?.includes(oldName)) return; r.conds = r.conds.filter(x => x !== oldName); if (newName) r.conds.push(newName); };
+  cs.party.forEach(fix);
+  cs.enc.combatants.forEach(x => { if (x.kind === 'monster') fix(x); });
+  touchParty(); persist(); render();
+}
+
 export function combatantCount() { return cs.enc.combatants.filter(c => c.kind !== 'lair').length; }
 export function monsterCount() { return cs.enc.combatants.filter(c => c.kind === 'monster').length; }
 // Current monsters as [{id, count}] for saving an encounter
@@ -488,7 +497,7 @@ function pvEntry(c, hid, extra = {}) {
   const r = rec(c);
   return {
     name: pvName(c, hid), side: c.kind === 'pc' ? 'party' : 'foe', stage: stageOf(c),
-    conds: [...(r.conds || []), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : ''].filter(Boolean),
+    conds: [...(r.conds || []).filter(showOnPlayerView), r.exh ? `exhaustion ${r.exh}` : '', r.conc ? 'concentrating' : ''].filter(Boolean),
     ...extra,
   };
 }
@@ -527,8 +536,18 @@ function publishPlayerView() {
 
 export function openPlayerView() {
   publishPlayerView();
+  const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+  const base = location.pathname.replace(/[^/]*$/, '');
+  if (standalone && /Android/i.test(navigator.userAgent)) {
+    // The installed app can't open a second window of itself on Android, so hand the page to Chrome,
+    // which opens as its own window in DeX. Both share the same storage, so updates still flow.
+    const url = `${location.origin}${base}player.html`;
+    location.href = `intent://${location.host}${base}player.html#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+    ctx.toast('Player view opening in Chrome. Drag that window to the TV and tap it for full screen.');
+    return;
+  }
   const w = window.open('player.html', 'bestiaryPlayerView');
-  if (!w) ctx.toast('The player view was blocked from opening. Allow pop-ups for this app, or open player.html from your app address.');
+  if (!w) ctx.toast('The player view was blocked from opening. Allow pop-ups for this app, or open player.html in Chrome.');
   else ctx.toast('Player view opened. Drag that window to the TV and make it full screen.');
 }
 
@@ -636,10 +655,15 @@ function detailHtml() {
   }
 
   // Conditions
-  sections.push(`<div class="dbox"><h3>Conditions</h3>
-    <div class="condgrid">${CONDITIONS.map(k => `<button type="button" class="cond${(r.conds || []).includes(k) ? ' on' : ''}" data-c="cond" data-k="${k}" aria-pressed="${(r.conds || []).includes(k)}">${k}</button>`).join('')}
+  const has = k => (r.conds || []).includes(k);
+  const chip = (k, extra = '') => `<button type="button" class="cond${has(k) ? ' on' : ''}${extra}" data-c="cond" data-k="${esc(k)}" aria-pressed="${has(k)}">${esc(k)}</button>`;
+  const custom = customConditions();
+  const active = [...(r.conds || []), ...(r.conc ? ['concentrating'] : [])].map(conditionInfo).filter(Boolean);
+  sections.push(`<div class="dbox"><div class="condhead"><h3>Conditions</h3><button class="btn ghost" type="button" data-c="condref">Rules and custom</button></div>
+    <div class="condgrid">${STANDARD.map(k => chip(k)).join('')}
       <button type="button" class="cond${r.conc ? ' on' : ''}" data-c="conc" aria-pressed="${!!r.conc}">concentrating</button>
     </div>
+    ${custom.length ? `<div class="condgrid custom">${custom.map(x => chip(x.name, ' mine')).join('')}</div>` : ''}
     <div class="exhrow">
       <span>Exhaustion</span>
       <button class="btn icon" type="button" data-c="exh" data-d="-1" aria-label="Less exhaustion">−</button>
@@ -647,6 +671,7 @@ function detailHtml() {
       <button class="btn icon" type="button" data-c="exh" data-d="1" aria-label="More exhaustion">+</button>
       <span class="exhtxt">${r.exh ? esc(EXHAUSTION[r.exh]) + (r.exh > 1 && r.exh < 6 ? ', plus everything below' : '') : 'None'}</span>
     </div>
+    ${active.length ? `<div class="activerules">${active.map(a => `<div class="arule"><b>${esc(a.name)}</b>${a.lines.length ? `<ul>${a.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}</div>`).join('')}</div>` : ''}
   </div>`);
 
   // Spellcasting
@@ -788,6 +813,7 @@ function onClick(e) {
     case 'undo': return undoActive();
     case 'end': return endCombat();
     case 'encounters': return ctx.openEncounters();
+    case 'condref': return ctx.openConditions((r?.conds || [])[0]);
     case 'playerview': return openPlayerView();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
     case 'party': renderParty(); return document.querySelector('#partyDlg').showModal();

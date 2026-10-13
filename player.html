@@ -42,7 +42,10 @@ header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(-
 .segs i{height:clamp(10px,1.6vh,22px);border-radius:3px;background:var(--seg-off)}
 .row.foe .segs i.on{background:var(--foe)}
 .row.party .segs i.on{background:var(--party)}
-.word{font:700 clamp(16px,2.4vh,34px)/1 var(--sans);min-width:7.5em;text-align:right;letter-spacing:.01em}
+.word{font:700 clamp(20px,3vh,42px)/1 var(--sans);text-align:right;letter-spacing:.01em;white-space:nowrap}
+.s-wounded .word{color:#e3c27a}
+.s-bloodied .word,.s-near .word{color:#e58a8a}
+.s-stable .word{color:var(--muted)}
 .row.s-down .name,.row.s-dead .name{text-decoration:line-through;opacity:.6}
 .row.s-dying .word,.row.s-dead .word,.row.s-down .word{color:var(--foe)}
 .conds{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px}
@@ -50,12 +53,14 @@ header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(-
 .members{grid-column:2/-1;list-style:none;margin:.6vh 0 0;padding:0;display:grid;gap:.6vh}
 .members .row{background:transparent;padding:.3vh 0;min-height:0;border:0;grid-template-columns:minmax(0,1fr) auto}
 .members .name{font-size:clamp(17px,2.6vh,36px)}
+.members .word{font-size:clamp(17px,2.5vh,34px)}
 
 .idle{display:grid;place-items:center;text-align:center;color:var(--muted);font:500 clamp(20px,3vh,40px)/1.4 var(--sans)}
 .idle b{display:block;font:800 clamp(34px,6vh,80px)/1.1 var(--serif);color:var(--text);margin-bottom:1vh}
 .lairban{margin-left:auto;font:italic 400 clamp(18px,2.8vh,38px) var(--serif);color:var(--foe)}
 .hint{position:fixed;right:1.4vw;bottom:1.2vh;font-size:14px;color:var(--muted);opacity:.7;transition:opacity .6s}
 .hint.gone{opacity:0}
+.backbtn{position:fixed;left:1.4vw;bottom:1.2vh;padding:10px 16px;border:1px solid var(--line);border-radius:8px;background:var(--row);color:var(--text);font:700 16px var(--sans);text-decoration:none}
 @media (prefers-reduced-motion:reduce){.hint{transition:none}}
 </style>
 </head>
@@ -64,6 +69,7 @@ header{display:flex;align-items:baseline;gap:2.4vw;border-bottom:2px solid var(-
   <div class="idle"><div><b>Waiting for combat</b>Start a fight in the Bestiary's combat tracker.</div></div>
 </div>
 <p class="hint" id="hint">Tap anywhere for full screen</p>
+<a class="backbtn" id="backBtn" href="./" hidden>Back to tracker</a>
 <script src="player.js"></script>
 </body>
 </html>

@@ -407,3 +407,24 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 
 .pvhide{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.92rem}
 .pvhide input{width:20px;height:20px;accent-color:var(--accent)}
+
+/* Conditions reference + custom */
+.condhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.condhead h3{margin:0 0 8px}
+.condgrid.custom{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+.cond.mine{border-style:dashed}
+.cond.mine.on{border-style:solid}
+.activerules{margin-top:12px;display:grid;gap:8px}
+.arule{padding:8px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:4px;font-size:.92rem}
+.arule b{text-transform:capitalize;font-family:var(--serif);font-size:1rem}
+.arule ul{margin:4px 0 0;padding-left:1.1em}
+.conddlg{width:min(760px,calc(100vw - 32px))}
+.condbody{display:grid;gap:18px;max-height:64dvh;overflow:auto}
+.condbody h3{margin:0 0 8px;font:700 1.15rem var(--serif);color:var(--accent)}
+.condref{padding:10px 0;border-bottom:1px solid var(--line)}
+.condref h4{margin:0 0 4px;font:700 1.08rem var(--serif);text-transform:capitalize;color:var(--ink)}
+.condref h4 small{font:400 .8rem var(--sans);color:var(--muted);text-transform:none;margin-left:6px}
+.condref p{margin:4px 0}
+.rules{margin:4px 0 0;padding-left:1.2em;line-height:1.5}
+#condFoot{justify-content:flex-start}
+:root[data-theme="red"] .arule{background:#000;border-left-width:4px}

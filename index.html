@@ -98,6 +98,11 @@
       <p>Random by CR gives each monster that joins a fight its own HP from the DMG's hit point range for its challenge rating, so two of the same monster can differ. Stat blocks themselves don't change.</p>
     </div>
     <div class="set">
+      <h3>Conditions</h3>
+      <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="condMgrBtn">Rules and custom conditions</button></div>
+      <p>Read the rules for every condition, and add your own, like Rage, Bless, Bane or Haste, to tap on in combat.</p>
+    </div>
+    <div class="set">
       <h3>Google Drive sync</h3>
       <div id="syncInfo" class="syncinfo"></div>
     </div>
@@ -114,7 +119,7 @@
       <h3>Storage</h3>
       <p id="storageInfo">Checking storage…</p>
     </div>
-    <p class="hint" style="margin:0">Includes material from the System Reference Document 5.1 by Wizards of the Coast LLC, licensed under CC BY 4.0. Fonts: Alegreya and Alegreya Sans (SIL Open Font License).</p>
+    <p class="hint" style="margin:0">Includes material, including monster stat blocks and condition rules, from the System Reference Document 5.1 by Wizards of the Coast LLC, licensed under CC BY 4.0. Fonts: Alegreya and Alegreya Sans (SIL Open Font License).</p>
     <div class="row"><button class="btn primary" value="close" type="submit">Done</button></div>
   </form>
 </dialog>
@@ -174,6 +179,14 @@
       <button class="btn" value="cancel" type="submit">Cancel</button>
       <button class="btn primary" value="ok" type="submit">Save</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="condDlg" class="conddlg">
+  <form class="dlg" method="dialog">
+    <h2 id="condTitle">Conditions</h2>
+    <div id="condBody" class="condbody"></div>
+    <div class="row" id="condFoot"></div>
   </form>
 </dialog>
 

@@ -19,12 +19,12 @@
     const [word] = STAGES[r.stage] || [''];
     const conds = r.conds?.length ? `<span class="conds">${r.conds.map(c => `<span>${esc(c)}</span>`).join('')}</span>` : '';
     if (inner) return `<li class="row ${r.side} s-${r.stage}"><span class="name">${esc(r.name)}</span>
-      <span class="stage">${segs(r.stage)}<span class="word">${word}</span></span>${conds}</li>`;
+      <span class="stage"><span class="word">${word}</span></span>${conds}</li>`;
     const mark = r.status === 'current' ? '▶' : r.status === 'acted' ? '✓' : '';
     return `<li class="row ${r.side} s-${r.stage} ${r.status || ''}">
       <span class="mark" aria-hidden="true">${mark}</span>
       <span class="name">${esc(r.name)}</span>
-      <span class="stage">${segs(r.stage)}<span class="word">${word}</span></span>${conds}</li>`;
+      <span class="stage"><span class="word">${word}</span></span>${conds}</li>`;
   }
 
   function group(g) {
@@ -76,6 +76,13 @@
   }
   keepAwake();
   document.addEventListener('visibilitychange', keepAwake);
+
+  // Loaded inside the installed app's own window: offer a way back to the tracker
+  if (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches) {
+    const back = document.getElementById('backBtn');
+    back.hidden = false;
+    back.addEventListener('click', e => e.stopPropagation());
+  }
 
   // Tap for full screen
   const hint = document.getElementById('hint');
