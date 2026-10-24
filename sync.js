@@ -3,7 +3,8 @@
 import { db } from './db.js';
 
 const CLIENT_ID = '150155066546-k6e9l4c0fbmel2tdfkv4c4gs41bqd847.apps.googleusercontent.com';
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+// drive.appdata: this app's own sync file. drive.file: the character sheets your Character Sheets app shares, for live HP in combat.
+const SCOPE = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
 const FILE_NAME = 'bestiary-sync.json';
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -39,7 +40,7 @@ function saveToken() {
 function loadToken() {
   try { const t = JSON.parse(localStorage.getItem('bestiary-token') || 'null'); if (t && t.exp > Date.now()) Object.assign(tok, t); } catch { /* ignore */ }
 }
-const tokenValid = () => tok.value && tok.exp > Date.now() + 30000;
+const tokenValid = () => tok.value && tok.exp > Date.now() + 30000 && tok.scope === SCOPE;
 
 function ago(t) {
   if (!t) return 'never';
@@ -72,16 +73,22 @@ async function signIn() {
       scope: SCOPE,
       callback: r => {
         if (r.error) return reject(new Error(r.error_description || r.error));
-        tok.value = r.access_token;
+        tok.value = r.access_token; tok.scope = SCOPE;
         tok.exp = Date.now() + (Number(r.expires_in) || 3600) * 1000;
         saveToken();
         resolve();
       },
       error_callback: e => reject(new Error(e?.type === 'popup_closed' ? 'Sign-in was closed before it finished.' : (e?.message || 'Sign-in failed.'))),
     });
-    tokenClient.requestAccessToken({ prompt: ss.connected ? '' : 'consent' });
+    // ask again (consent) the first time this app needs the added character sheet access
+    tokenClient.requestAccessToken({ prompt: ss.connected && ss.scopeV === 2 ? '' : 'consent' });
+    ss.scopeV = 2;
   });
 }
+
+/* ---------- for the character sheet link (sheets.js) ---------- */
+export const driveReady = () => ss.connected && tokenValid() && navigator.onLine;
+export async function driveApi(url, opts) { if (!tokenValid()) { const e = new Error('auth'); e.auth = true; throw e; } return api(url, opts); }
 
 /* ---------- Drive calls ---------- */
 async function api(url, opts = {}) {
