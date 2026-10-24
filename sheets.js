@@ -16,10 +16,15 @@ const st = { list: [], partyModified: '', files: {}, timer: null, onUpdate: null
 
 async function modules() {
   if (M && R) return true;
-  try {
-    [M, R] = await Promise.all([import('../character-sheet/js/model.js'), import('../character-sheet/js/rules.js')]);
-    return true;
-  } catch { st.error = "Couldn't load the Character Sheets app from this site."; return false; }
+  // GitHub Pages addresses follow the repository name's capitals (yours is Character-Sheet); try both spellings
+  for (const base of ['../Character-Sheet/js/', '../character-sheet/js/']) {
+    try {
+      [M, R] = await Promise.all([import(`${base}model.js`), import(`${base}rules.js`)]);
+      return true;
+    } catch { M = R = null; }
+  }
+  st.error = "Couldn't load the Character Sheets app from this site.";
+  return false;
 }
 
 const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
