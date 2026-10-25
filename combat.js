@@ -48,7 +48,7 @@ function applySheetStats(res) {
   let any = false;
   for (const [id, s] of Object.entries(res)) {
     const p = pc(id); if (!p) continue;
-    for (const k of ['hp', 'temp', 'maxHp', 'ac', 'passive', 'ip', 'exh']) if (s[k] != null && p[k] !== s[k]) { p[k] = s[k]; any = true; }
+    for (const k of ['hp', 'temp', 'maxHp', 'ac', 'passive', 'ip', 'exh', 'form']) if (s[k] != null && p[k] !== s[k]) { p[k] = s[k]; any = true; }
     p.linked = true;
   }
   if (any) { persist(); render(); }
@@ -647,7 +647,7 @@ function rowHtml(c, i, opt = null) {
       <span class="cinit">${initCell ?? (e.started || c.init != null ? (c.init ?? '–') : '')}</span>
       <span class="cname">${esc(nameOf(c))}${state === 'down' ? ' <small>down</small>' : state === 'dying' ? ' <small>at 0 HP</small>' : state === 'dead' ? ' <small>dead</small>' : ''}</span>
       <span class="cac">AC ${esc(r.ac)}</span>
-      <span class="chp"><b>${r.hp}</b>/${r.maxHp}${r.temp ? ` <i>+${r.temp}</i>` : ''}${c.kind === 'pc' && r.linked && activeMode() && r.ip ? ` <span class="ipst ip-${esc(r.ip)}" title="Interrupt Point on their sheet">IP ${esc({ ready: 'ready', spent: 'spent', recharging: 'recharging' }[r.ip] || r.ip)}</span>` : ''}</span>
+      <span class="chp">${r.form ? `<small class="asform">as ${esc(r.form)}</small> ` : ''}<b>${r.hp}</b>/${r.maxHp}${r.temp ? ` <i>+${r.temp}</i>` : ''}${c.kind === 'pc' && r.linked && activeMode() && r.ip ? ` <span class="ipst ip-${esc(r.ip)}" title="Interrupt Point on their sheet">IP ${esc({ ready: 'ready', spent: 'spent', recharging: 'recharging' }[r.ip] || r.ip)}</span>` : ''}</span>
       <span class="hpbar" aria-hidden="true"><span style="width:${hpPct}%"></span></span>
       ${chips.length ? `<span class="chips">${chips.map(x => `<span>${esc(x)}</span>`).join('')}</span>` : ''}
     </button>
@@ -671,6 +671,7 @@ function detailHtml() {
 
   // HP
   sections.push(`<div class="dbox hpbox">
+    ${r.form ? `<p class="dsub">Wild Shaped (or in a form) as <b>${esc(r.form)}</b>. Damage comes off the form first; the sheet carries any extra over.</p>` : ''}
     <div class="hpbig"><span class="hpnow">${r.hp}</span><span class="hpmax">/ ${r.maxHp}</span>${r.temp ? `<span class="hptemp">+${r.temp} temp</span>` : ''}</div>
     ${c.hpNote ? `<p class="note" style="margin-top:2px">${esc(c.hpNote)}</p>` : ''}
     <div class="hpctl">

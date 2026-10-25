@@ -439,3 +439,5 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .ipst.ip-ready{color:var(--accent)}
 .ipst.ip-spent{color:var(--muted)}
 .ipst.ip-recharging{color:var(--text);border-style:dashed}
+
+.asform{color:var(--muted);font-size:.8em;font-weight:400}

@@ -57,9 +57,12 @@ export function sheetFor(p) {
 // Numbers the tracker shows for a sheet
 function statsOf(c) {
   M.replayHp(c);
+  // Wild Shape or another form: the tracker shows the form's HP and AC; damage still goes to the sheet, which works out the carryover
+  const f = c.hp?.form;
   return {
-    hp: Number(c.hp?.cur) || 0, temp: Number(c.hp?.temp) || 0, maxHp: Number(c.hp?.max) || 0,
-    ac: R.armorClass(c).withTemp, passive: R.passivePerception(c), ip: c.ip || 'ready', exh: Number(c.exhaustion) || 0,
+    hp: f ? f.cur : Number(c.hp?.cur) || 0, temp: Number(c.hp?.temp) || 0, maxHp: f ? f.max : Number(c.hp?.max) || 0,
+    ac: f && f.ac != null ? f.ac : R.armorClass(c).withTemp, passive: R.passivePerception(c), ip: c.ip || 'ready', exh: Number(c.exhaustion) || 0,
+    form: f ? f.name : '',
   };
 }
 
