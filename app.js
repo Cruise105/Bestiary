@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { combatVisible, showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { initSync } from './sync.js';
 import { initConditions, loadConditions, openConditions, conditionsForBackup, mergeConditionsFromBackup } from './conditions.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
@@ -83,6 +83,7 @@ function setMode(m) {
   document.querySelectorAll('.libonly').forEach(b => { b.hidden = m !== 'library'; });
   document.querySelectorAll('.modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
   if (m === 'combat') { $('#combatView').dataset.view = 'list'; renderCombat(); }
+  combatVisible(m === 'combat');
 }
 function updateBadge() {
   const n = combatantCount();

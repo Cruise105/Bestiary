@@ -53,7 +53,14 @@ function applySheetStats(res) {
   }
   if (any) { persist(); render(); }
 }
-function goLive() { if (cs.enc.started) SH.startLive(() => cs.party, applySheetStats); }
+// Sheets are checked every few seconds while a fight is running or the Combat screen is open
+let combatShowing = false;
+function goLive() { if (cs.enc.started || combatShowing) SH.startLive(() => cs.party, applySheetStats); }
+export function combatVisible(on) {
+  combatShowing = !!on;
+  if (on) goLive();
+  else if (!cs.enc.started) SH.stopLive();
+}
 export async function pullSheetsOnce() { try { applySheetStats(await SH.pull(cs.party)); } catch { /* not signed in */ } }
 
 export async function loadCombat() {
@@ -354,7 +361,7 @@ async function endCombat() {
     : 'Players keep their current HP and conditions.';
   if (!await ctx.confirmBox('End combat?', body, 'End combat')) return;
   if (activeMode()) SH.interrupts(cs.party, 'end');
-  SH.stopLive();
+  if (!combatShowing) SH.stopLive(); // still on the Combat screen: keep the sheets in step
   cs.enc = { combatants: [], round: 0, turn: -1, started: false, sitOut: [], active: null };
   cs.party.forEach(p => { p.conc = false; });
   cs.sel = null;
