@@ -433,3 +433,14 @@ input.mini{width:70px;min-height:36px;padding:2px 6px;border-radius:6px;border:1
 .picactions .note{margin:0}
 
 .fieldhint{font-size:.8rem;color:var(--muted);font-weight:400;margin-left:4px}
+
+/* Interrupt Point from the player's character sheet */
+.ipst{display:inline-block;margin-left:6px;padding:0 6px;border-radius:99px;font-size:.72rem;font-style:normal;border:1px solid currentColor;vertical-align:1px}
+.ipst.ip-ready{color:var(--accent)}
+.ipst.ip-spent{color:var(--muted)}
+.ipst.ip-recharging{color:var(--text);border-style:dashed}
+
+.asform{color:var(--muted);font-size:.8em;font-weight:400}
+
+.sheetlink{margin:4px 12px 0;font-size:.85rem;color:var(--muted)}
+.sheetlink.bad{color:#e0707a;font-weight:600}
