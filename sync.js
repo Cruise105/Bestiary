@@ -104,6 +104,7 @@ async function signIn() {
 /* ---------- for the character sheet link (sheets.js) ---------- */
 // The suite core (shared campaigns and party), for the combat tracker; null if it couldn't load
 export const suite = () => core;
+export const suiteToken = () => (tokenValid() ? tok.value : null);
 export const driveReady = () => ss.connected && tokenValid() && navigator.onLine;
 export async function driveApi(url, opts) { if (!tokenValid()) { const e = new Error('auth'); e.auth = true; throw e; } return api(url, opts); }
 

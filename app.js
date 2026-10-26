@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { combatVisible, showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
-import { initSync } from './sync.js';
+import { initSync, suite, suiteToken } from './sync.js';
 import { initConditions, loadConditions, openConditions, conditionsForBackup, mergeConditionsFromBackup } from './conditions.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
 import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
@@ -155,6 +155,41 @@ async function saveMonster(m) {
 async function saveSettings() {
   await db.setMeta('settings', state.settings);
 }
+
+/* ---------- Table Rules shared with every app (spell points or slots, Active or standard initiative) ---------- */
+// The newest choice wins, whichever app it was made in. suiteAt remembers when each was chosen here.
+const SUITE_SET = {
+  spellMode: { key: 'spellMode', out: v => v, in: v => v },
+  initMode: { key: 'initiative', out: v => (v === 'active' ? 'active' : 'standard'), in: v => (v === 'active' ? 'active' : 'rolls') },
+};
+function settingChosen(k) {
+  state.settings.suiteAt = { ...(state.settings.suiteAt || {}), [k]: Date.now() };
+  saveSettings(); pushSuiteSettings();
+}
+async function pushSuiteSettings() {
+  const core = suite(), token = suiteToken(); if (!core?.saveSuite || !token) return;
+  const ts = core.tableSettings();
+  for (const [k, m] of Object.entries(SUITE_SET)) {
+    const at = state.settings.suiteAt?.[k] || 0, v = m.out(state.settings[k]);
+    if (at > (ts.at[m.key] || 0) && v !== ts[m.key]) { try { await core.saveSuite(token, { settings: { [m.key]: v }, settingsAt: at }); } catch { /* next sync */ } }
+  }
+}
+function adoptSuiteSettings() {
+  const core = suite(); if (!core?.tableSettings) return;
+  const ts = core.tableSettings();
+  let changed = false;
+  for (const [k, m] of Object.entries(SUITE_SET)) {
+    const sAt = ts.at[m.key] || 0;
+    if (sAt > (state.settings.suiteAt?.[k] || 0) && m.out(state.settings[k]) !== ts[m.key]) {
+      state.settings[k] = m.in(ts[m.key]);
+      state.settings.suiteAt = { ...(state.settings.suiteAt || {}), [k]: sAt };
+      changed = true;
+    }
+  }
+  if (changed) { saveSettings(); applyTheme(); if (!state.editing) renderDetail(); renderCombat(); }
+  pushSuiteSettings();
+}
+window.addEventListener('dmp-suite', adoptSuiteSettings);
 
 /* ---------- filters + list ---------- */
 function buildFilterOptions() {
@@ -849,11 +884,11 @@ function wire() {
   });
   $('#spellSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    state.settings.spellMode = b.dataset.spell; applyTheme(); saveSettings(); if (!state.editing) renderDetail(); renderCombat();
+    state.settings.spellMode = b.dataset.spell; applyTheme(); settingChosen('spellMode'); if (!state.editing) renderDetail(); renderCombat();
   });
   $('#initSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    state.settings.initMode = b.dataset.init; applyTheme(); saveSettings(); renderCombat();
+    state.settings.initMode = b.dataset.init; applyTheme(); settingChosen('initMode'); renderCombat();
   });
   $('#hpSeg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
