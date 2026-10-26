@@ -5,6 +5,7 @@ import { db } from './db.js';
 import { HP_BY_CR } from './parser.js';
 import { STANDARD, customConditions, conditionInfo, showOnPlayerView } from './conditions.js';
 import * as SH from './sheets.js';
+import { suite } from './sync.js';
 
 const CONDITIONS = ['blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious'];
@@ -22,6 +23,7 @@ let root;         // #combatView
 const cs = {      // combat state
   party: [],
   benched: [],    // players whose character is in another campaign: kept, just not in fights until it's current again
+  liveTable: '',  // this table's secret code for the live link (Firebase); travels to sheets only inside their Drive files
   partyUpdated: 0,
   enc: { combatants: [], round: 0, turn: -1, started: false },
   sel: null,      // selected cid
@@ -37,7 +39,7 @@ function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     db.setMeta('encounter', cs.enc);
-    db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
+    db.setMeta('party', { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated });
   }, 150);
   ctx?.onChange?.();
   if (cs.enc.started || published.size) schedulePublish();
@@ -75,18 +77,19 @@ export async function pullSheetsOnce() { try { applySheetStats(await SH.pull(cs.
 
 export async function loadCombat() {
   const [p, e] = await Promise.all([db.getMeta('party'), db.getMeta('encounter')]);
-  if (p) { cs.party = p.list || []; cs.benched = p.benched || []; cs.partyUpdated = p.updated || 0; }
+  if (p) { cs.party = p.list || []; cs.benched = p.benched || []; cs.liveTable = p.liveTable || ''; cs.partyUpdated = p.updated || 0; }
   if (e) cs.enc = e;
   goLive();
   window.addEventListener('dmp-suite', () => syncRoster());
+  if (cs.enc.started) schedulePublish(); // reconnect the live link mid-fight
 }
 
-export function partyForBackup() { return { list: cs.party, benched: cs.benched, updated: cs.partyUpdated }; }
+export function partyForBackup() { return { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated }; }
 export async function mergePartyFromBackup(p) {
   if (!p || !Array.isArray(p.list)) return false;
   if ((p.updated || 0) <= cs.partyUpdated) return false;
-  cs.party = p.list; cs.benched = p.benched || []; cs.partyUpdated = p.updated;
-  await db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
+  cs.party = p.list; cs.benched = p.benched || []; cs.liveTable = p.liveTable || cs.liveTable || ''; cs.partyUpdated = p.updated;
+  await db.setMeta('party', { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated });
   render();
   return true;
 }
@@ -396,17 +399,18 @@ function schedulePublish() { clearTimeout(pubTimer); pubTimer = setTimeout(publi
 function viewFor(p) {
   const a = act();
   const c = cs.enc.combatants.find(x => x.kind === 'pc' && x.pcId === p.id);
-  if (!cs.enc.started || !activeMode() || !a || !c) return { on: false, done: p.reqDone || '' };
+  if (!cs.enc.started || !activeMode() || !a || !c) return { on: false, done: p.reqDone || '', live: cs.liveTable };
   const all = units(), u = all.find(x => x.members.includes(c)), o = options(u);
   const cur = a.current && all.find(x => x.key === a.current);
   return {
-    on: true, round: a.round, done: p.reqDone || '',
+    on: true, round: a.round, done: p.reqDone || '', live: cs.liveTable,
     mine: !!u && a.current === u.key, acted: !!u && a.acted.includes(u.key), picks: !!u && !a.current && a.last === u.key && a.acted.length > 0,
     current: cur ? cur.name : '',
     start: o.includes('first') || o.includes('next'), point: o.includes('ppoint'), free: o.includes('free'),
   };
 }
 function publishCombat() {
+  if (cs.enc.started && !cs.liveTable) liveSetup();
   for (const p of cs.party) {
     if (!SH.sheetFor(p)) continue;
     const v = viewFor(p), key = JSON.stringify(v);
@@ -414,8 +418,37 @@ function publishCombat() {
     // nothing to tell a sheet that has never seen a fight
     if (!v.on && !published.has(p.id) && !cs.enc.started) { published.set(p.id, key); continue; }
     published.set(p.id, key);
-    SH.combatState(p, v).then(r => { if (r == null) published.delete(p.id); }); // couldn't write: try again next time
+    const stamped = { ...v, t: Date.now() };
+    // instantly over the live link, and into their sheet file on Drive (which also teaches the sheet the table's code)
+    if (p.charId && cs.liveTable) liveMod().then(L => L?.sendView(cs.liveTable, p.charId, stamped));
+    SH.combatState(p, stamped).then(r => { if (r == null) published.delete(p.id); }); // couldn't write: try again next time
   }
+  liveWatch();
+}
+
+/* ---------- live link (Firebase): turns arrive instantly; Drive stays the backup ---------- */
+const liveMod = () => Promise.resolve(suite()?.live?.() || null).catch(() => null);
+function liveSetup() {
+  if (cs.liveTable) return;
+  liveMod().then(L => { if (!L || cs.liveTable) return; cs.liveTable = L.newTableKey(); touchParty(); });
+}
+let liveStop = null, liveFor = '';
+function liveWatch() {
+  const want = cs.enc.started && activeMode() && cs.liveTable ? cs.liveTable : '';
+  if (want === liveFor) return;
+  liveStop?.(); liveStop = null; liveFor = want;
+  if (!want) return;
+  liveMod().then(L => {
+    if (!L || liveFor !== want) return;
+    liveStop = L.watchRequests(want, all => {
+      for (const [charId, req] of Object.entries(all || {})) {
+        const p = cs.party.find(x => x.charId === charId);
+        if (!p || !req?.id || req.id === p.reqDone) continue;
+        p.reqDone = req.id; touchParty();
+        playerRequest(p, req);
+      }
+    });
+  });
 }
 // A player tapped Start my turn, Interrupt or End my turn on their sheet
 function playerRequest(p, req) {
