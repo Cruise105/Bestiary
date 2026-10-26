@@ -26,10 +26,10 @@ const why = (e, what) => `${what}: ${e.status ? `Google answered ${e.status}` : 
 async function modules() {
   if (M && R) return true;
   // The Character Sheets app's own HP and rules code first, so both apps always agree. GitHub Pages addresses follow
-  // the repository name's capitals (yours is Character-Sheet), so both spellings are tried. If the browser won't load
+  // the repository name exactly (yours is Char-Sheet; it was Character-Sheet before). If the browser won't load
   // them (an ad blocker, a slow connection), the Bestiary's own copy (cs-model.js, cs-rules.js) is used instead.
   const why = [];
-  for (const base of ['../Character-Sheet/js/', '../character-sheet/js/']) {
+  for (const base of ['../Char-Sheet/js/', '../Character-Sheet/js/']) {
     try {
       [M, R] = await Promise.all([import(`${base}model.js`), import(`${base}rules.js`)]);
       st.via = 'live'; return true;
