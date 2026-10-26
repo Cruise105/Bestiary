@@ -108,9 +108,10 @@ async function syncRoster() {
     let changed = false;
     // older members: tie them to their character once (an earlier chosen sheet, or the same name)
     for (const p of [...cs.party, ...cs.benched]) {
-      if (p.charId) continue;
-      const s = SH.sheetFor(p);
+      if (p.charId || p.sheetId === 'none') continue;
+      const s = SH.oldMatch(p);
       if (s && ![...cs.party, ...cs.benched].some(x => x.charId === s.id)) { p.charId = s.id; delete p.sheetId; changed = true; }
+      else { p.sheetId = 'none'; changed = true; } // checked once: an ally or NPC, left unlinked from now on
     }
     // sit out, or come back, with the campaign
     const out = cs.party.filter(p => SH.inOtherCampaign(p.charId));

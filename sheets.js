@@ -64,10 +64,13 @@ export async function refreshParty() {
   return true;
 }
 
-// Which sheet is this party member? Its character's permanent id (the suite's way), then an older chosen link,
-// then the same name (only for members not yet linked to a character).
+// Which sheet is this party member? Only the one for its character's permanent id. (Members without one are
+// allies or NPCs, and stay unlinked even if a name happens to match.)
 export function sheetFor(p) {
-  if (p.charId) return st.list.find(s => s.id === p.charId) || null;
+  return (p?.charId && st.list.find(s => s.id === p.charId)) || null;
+}
+// For tying an older member to its character once: the sheet chosen for it before the suite, else the same name
+export function oldMatch(p) {
   if (p.sheetId === 'none') return null;
   if (p.sheetId) return st.list.find(s => s.id === p.sheetId) || null;
   const n = norm(p.name), f = first(p.name);
