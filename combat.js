@@ -40,20 +40,24 @@ function persist() {
     db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
   }, 150);
   ctx?.onChange?.();
+  if (cs.enc.started || published.size) schedulePublish();
 }
 function touchParty() { cs.partyUpdated = Date.now(); persist(); }
 
 /* ---------- live link to character sheets ---------- */
 // Numbers from a player's sheet replace the tracker's copy (the sheet is where HP lives)
 function applySheetStats(res) {
-  let any = false;
+  let any = false; reqs.length = 0;
   for (const [id, s] of Object.entries(res)) {
     const p = pc(id); if (!p) continue;
     for (const k of ['hp', 'temp', 'maxHp', 'ac', 'passive', 'ip', 'exh', 'form']) if (s[k] != null && p[k] !== s[k]) { p[k] = s[k]; any = true; }
     p.linked = true;
+    if (s.req?.id && s.req.id !== p.reqDone) { p.reqDone = s.req.id; any = true; reqs.push([p, s.req]); }
   }
   if (any) { persist(); render(); }
+  reqs.forEach(([p, r]) => playerRequest(p, r));
 }
+const reqs = [];
 // Sheets are checked every few seconds while a fight is running or the Combat screen is open
 let combatShowing = false;
 function goLive() { if (cs.enc.started || combatShowing) SH.startLive(() => cs.party, applySheetStats, showLinkStatus); }
@@ -320,6 +324,7 @@ function pickNext(key, how) {
   const a = act(); const u = units().find(x => x.key === key); if (!u) return;
   snapshot();
   if (how === 'point') { a.ip.left--; a.ip.round = a.round; }
+  if (how === 'ppoint') u.members.forEach(m => { const p = m.kind === 'pc' && pc(m.pcId); if (p) { p.ip = 'spent'; SH.spendIp(p); } });
   a.current = key; a.hurt = [];
   u.members.forEach(m => { if (m.kind === 'monster') beginTurn(m); });
   cs.sel = u.members[0].cid;
@@ -347,21 +352,85 @@ function undoActive() {
   persist(); render();
 }
 
+// Who may go next and how: 'first', 'next', and the interrupts 'free' (hurt since their last turn),
+// 'point' (the monsters' pool), 'ppoint' (a player's own Interrupt Point, from their sheet) and 'inspiration'
+function options(u) {
+  const a = act();
+  if (!a || !cs.enc.started || a.current || !u || u.down || a.acted.includes(u.key)) return [];
+  if (!a.last) return ['first'];
+  const newRound = !a.acted.length;
+  const lastU = units().find(x => x.key === a.last);
+  if (newRound && u.key === a.last) return [];
+  const out = ['next'];
+  if (!newRound && lastU && lastU.side !== u.side) {
+    if (a.hurtAfter.includes(u.key)) out.push('free');
+    else if (u.side === 'foes' && a.ip.left > 0 && a.ip.round !== a.round) out.push('point');
+    else if (u.side === 'party') {
+      const ready = u.members.some(m => m.kind === 'pc' && pc(m.pcId)?.linked && pc(m.pcId)?.ip === 'ready');
+      if (ready) out.push('ppoint');
+      out.push('inspiration');
+    }
+  }
+  return out;
+}
+
 // Buttons for picking who goes next, including interrupts
 function pickButtons(u) {
   const a = act();
   if (!a || !cs.enc.started || a.current || u.down || a.acted.includes(u.key)) return '';
-  if (!a.last) return `<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Goes first</button>`;
-  const newRound = !a.acted.length;
-  const lastU = units().find(x => x.key === a.last);
-  if (newRound && u.key === a.last) return '<span class="note pickwait">Picks who starts</span>';
-  const btns = [`<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Next</button>`];
-  if (!newRound && lastU && lastU.side !== u.side) {
-    if (a.hurtAfter.includes(u.key)) btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="free">Interrupt · free</button>`);
-    else if (u.side === 'foes' && a.ip.left > 0 && a.ip.round !== a.round) btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="point">Interrupt · point</button>`);
-    else if (u.side === 'party') btns.push(`<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="inspiration">Interrupt · inspiration</button>`);
-  }
+  const o = options(u);
+  if (o.includes('first')) return `<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Goes first</button>`;
+  if (!o.length) return '<span class="note pickwait">Picks who starts</span>';
+  const label = { free: 'Interrupt · free', point: 'Interrupt · point', ppoint: 'Interrupt · their point', inspiration: 'Interrupt · inspiration' };
+  const btns = o.map(h => h === 'next'
+    ? `<button class="btn primary pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="next">Next</button>`
+    : `<button class="btn pickbtn" type="button" data-c="pick" data-k="${u.key}" data-how="${h}">${label[h]}</button>`);
   return `<span class="picks">${btns.join('')}</span>`;
+}
+
+/* ---------- players running their own turns from their character sheets ---------- */
+// What each linked player's sheet shows: whose turn it is and which buttons they get. Sent only when it changes.
+const published = new Map();
+let pubTimer = null;
+function schedulePublish() { clearTimeout(pubTimer); pubTimer = setTimeout(publishCombat, 300); }
+function viewFor(p) {
+  const a = act();
+  const c = cs.enc.combatants.find(x => x.kind === 'pc' && x.pcId === p.id);
+  if (!cs.enc.started || !activeMode() || !a || !c) return { on: false, done: p.reqDone || '' };
+  const all = units(), u = all.find(x => x.members.includes(c)), o = options(u);
+  const cur = a.current && all.find(x => x.key === a.current);
+  return {
+    on: true, round: a.round, done: p.reqDone || '',
+    mine: !!u && a.current === u.key, acted: !!u && a.acted.includes(u.key), picks: !!u && !a.current && a.last === u.key && a.acted.length > 0,
+    current: cur ? cur.name : '',
+    start: o.includes('first') || o.includes('next'), point: o.includes('ppoint'), free: o.includes('free'),
+  };
+}
+function publishCombat() {
+  for (const p of cs.party) {
+    if (!SH.sheetFor(p)) continue;
+    const v = viewFor(p), key = JSON.stringify(v);
+    if (published.get(p.id) === key) continue;
+    // nothing to tell a sheet that has never seen a fight
+    if (!v.on && !published.has(p.id) && !cs.enc.started) { published.set(p.id, key); continue; }
+    published.set(p.id, key);
+    SH.combatState(p, v).then(r => { if (r == null) published.delete(p.id); }); // couldn't write: try again next time
+  }
+}
+// A player tapped Start my turn, Interrupt or End my turn on their sheet
+function playerRequest(p, req) {
+  const a = act();
+  const fresh = req.at && Date.now() - req.at < 5 * 60000;
+  const c = cs.enc.combatants.find(x => x.kind === 'pc' && x.pcId === p.id);
+  const u = c && units().find(x => x.members.includes(c));
+  if (!fresh || !a || !u || !cs.enc.started || !activeMode() || req.round !== a.round) { schedulePublish(); return; }
+  const o = options(u);
+  const say = m => ctx.toast(`${p.name} ${m} (from their sheet).`);
+  if (req.kind === 'start' && (o.includes('first') || o.includes('next'))) { pickNext(u.key, 'next'); say('started their turn'); }
+  else if (req.kind === 'point' && o.includes('ppoint')) { pickNext(u.key, 'ppoint'); say('interrupted with their Interrupt Point'); }
+  else if (req.kind === 'free' && o.includes('free')) { pickNext(u.key, 'free'); say('interrupted (free, they were hurt)'); }
+  else if (req.kind === 'end' && a.current === u.key) { endTurnActive(); say('ended their turn'); }
+  else { ctx.toast(`${p.name} tried to ${req.kind === 'end' ? 'end their turn' : req.kind === 'start' ? 'start their turn' : 'interrupt'}, but that isn't possible right now.`); schedulePublish(); }
 }
 
 /* ---------- combat flow ---------- */

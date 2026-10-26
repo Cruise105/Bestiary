@@ -82,6 +82,7 @@ function statsOf(c) {
     hp: f ? f.cur : Number(c.hp?.cur) || 0, temp: Number(c.hp?.temp) || 0, maxHp: f ? f.max : Number(c.hp?.max) || 0,
     ac: f && f.ac != null ? f.ac : R.armorClass(c).withTemp, passive: R.passivePerception(c), ip: c.ip || 'ready', exh: Number(c.exhaustion) || 0,
     form: f ? f.name : '',
+    req: c.combatReq || null, // a turn the player started, ended or interrupted from their sheet
   };
 }
 
@@ -156,6 +157,18 @@ export function inOtherCampaign(charId) {
   const cur = suite()?.currentCampaign?.()?.id || '';
   const s = charId && st.list.find(x => x.id === charId);
   return !!(cur && s && s.campaignId && s.campaignId !== cur);
+}
+
+// The player spent their Interrupt Point to interrupt
+export function spendIp(p) {
+  return change(p, c => { if (c.ip !== 'spent') { c.ip = 'spent'; M.stamp(c, 'ip'); } });
+}
+// Where the fight stands for this player (whose turn, what they may do), so their sheet can show it
+export function combatState(p, view) {
+  return change(p, c => {
+    if (JSON.stringify(c.combat || null) === JSON.stringify(view)) return;
+    c.combat = view; M.stamp(c, 'combat');
+  });
 }
 
 // Conditions from the tracker, onto the player's sheet with what each one does (only ones the players may see)
