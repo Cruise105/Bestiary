@@ -1,6 +1,6 @@
 // Offline support: every app file is cached on first visit, then served from the device.
 // When you publish an update, bump VERSION so tablets pick up the new files on their next launch.
-const VERSION = 'bestiary-v31';
+const VERSION = 'bestiary-v32';
 const FILES = [
   './', './index.html', './styles.css', './app.js', './db.js', './parser.js', './combat.js', './encounters.js', './sync.js', './sheets.js', './cs-model.js', './cs-rules.js', './conditions.js', './conditions-srd.js', './player.html', './player.js',
   './srd-monsters.json', './manifest.webmanifest',
@@ -26,7 +26,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // The shared suite core (/core/) lives outside this app: always try the newest copy, fall back to the saved one offline
   if (e.request.method === 'GET' && url.origin === location.origin && url.pathname.startsWith('/core/')) {
-    e.respondWith(fetch(e.request).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return res; })
+    // no-cache: check with the server every time (GitHub Pages otherwise lets browsers reuse a copy for 10 minutes)
+    e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(res => { if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return res; })
       .catch(() => caches.match(e.request, { ignoreSearch: true })));
     return;
   }
