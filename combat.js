@@ -23,7 +23,6 @@ let root;         // #combatView
 const cs = {      // combat state
   party: [],
   benched: [],    // players whose character is in another campaign: kept, just not in fights until it's current again
-  liveTable: '',  // this table's secret code for the live link (Firebase); travels to sheets only inside their Drive files
   partyUpdated: 0,
   enc: { combatants: [], round: 0, turn: -1, started: false },
   sel: null,      // selected cid
@@ -39,7 +38,7 @@ function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     db.setMeta('encounter', cs.enc);
-    db.setMeta('party', { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated });
+    db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
   }, 150);
   ctx?.onChange?.();
   if (cs.enc.started || published.size) schedulePublish();
@@ -77,19 +76,19 @@ export async function pullSheetsOnce() { try { applySheetStats(await SH.pull(cs.
 
 export async function loadCombat() {
   const [p, e] = await Promise.all([db.getMeta('party'), db.getMeta('encounter')]);
-  if (p) { cs.party = p.list || []; cs.benched = p.benched || []; cs.liveTable = p.liveTable || ''; cs.partyUpdated = p.updated || 0; }
+  if (p) { cs.party = p.list || []; cs.benched = p.benched || []; cs.partyUpdated = p.updated || 0; }
   if (e) cs.enc = e;
   goLive();
   window.addEventListener('dmp-suite', () => syncRoster());
   if (cs.enc.started) schedulePublish(); // reconnect the live link mid-fight
 }
 
-export function partyForBackup() { return { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated }; }
+export function partyForBackup() { return { list: cs.party, benched: cs.benched, updated: cs.partyUpdated }; }
 export async function mergePartyFromBackup(p) {
   if (!p || !Array.isArray(p.list)) return false;
   if ((p.updated || 0) <= cs.partyUpdated) return false;
-  cs.party = p.list; cs.benched = p.benched || []; cs.liveTable = p.liveTable || cs.liveTable || ''; cs.partyUpdated = p.updated;
-  await db.setMeta('party', { list: cs.party, benched: cs.benched, liveTable: cs.liveTable, updated: cs.partyUpdated });
+  cs.party = p.list; cs.benched = p.benched || []; cs.partyUpdated = p.updated;
+  await db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
   render();
   return true;
 }
@@ -146,7 +145,8 @@ function sheetConditions(r) {
 function pushConditions(r) {
   if (!SH.sheetFor(r)) return;
   const list = sheetConditions(r);
-  if (r.charId && cs.liveTable) liveMod().then(L => L?.put(cs.liveTable, `conds/${r.charId}`, { list, t: Date.now() }));
+  const key = keyOf(r);
+  if (key) liveMod().then(L => L?.channel(key, 'conds', { conditions: list }));
   SH.conditions(r, list);
 }
 // Custom condition renamed (or deleted when newName is null): update everyone carrying it
@@ -322,7 +322,7 @@ function startActive() {
   cs.enc.active = { round: 1, acted: [], current: null, last: null, hurt: [], hurtAfter: [], ip: { max: players, left: players, round: 0 }, history: [] };
   cs.enc.started = true; cs.enc.round = 1; cs.enc.turn = -1;
   persist(); render();
-  SH.interrupts(cs.party, 'start'); goLive();
+  liveInterrupts('start'); goLive();
   ctx.toast('Who triggered the scene? Tap Goes first on them.');
 }
 
@@ -330,7 +330,7 @@ function pickNext(key, how) {
   const a = act(); const u = units().find(x => x.key === key); if (!u) return;
   snapshot();
   if (how === 'point') { a.ip.left--; a.ip.round = a.round; }
-  if (how === 'ppoint') u.members.forEach(m => { const p = m.kind === 'pc' && pc(m.pcId); if (p) { p.ip = 'spent'; SH.spendIp(p); } });
+  if (how === 'ppoint') u.members.forEach(m => { const p = m.kind === 'pc' && pc(m.pcId); if (p) { p.ip = 'spent'; liveSheet(p, 'ip', 'spent'); } });
   a.current = key; a.hurt = [];
   u.members.forEach(m => { if (m.kind === 'monster') beginTurn(m); });
   cs.sel = u.members[0].cid;
@@ -344,7 +344,7 @@ function endTurnActive() {
   const left = units().filter(u => !u.down && !a.acted.includes(u.key));
   if (!left.length) {
     a.round++; cs.enc.round = a.round; a.acted = []; a.hurtAfter = [];
-    SH.interrupts(cs.party, 'round'); // players' recharging Interrupt Points are ready again
+    liveInterrupts('round'); // players' recharging Interrupt Points are ready again
     const lastU = units().find(u => u.key === a.last);
     ctx.toast(`Round ${a.round}. ${lastU ? lastU.name : 'The last to act'} picks who starts (not themselves).`);
   }
@@ -402,18 +402,17 @@ function schedulePublish() { clearTimeout(pubTimer); pubTimer = setTimeout(publi
 function viewFor(p) {
   const a = act();
   const c = cs.enc.combatants.find(x => x.kind === 'pc' && x.pcId === p.id);
-  if (!cs.enc.started || !activeMode() || !a || !c) return { on: false, done: p.reqDone || '', live: cs.liveTable };
+  if (!cs.enc.started || !activeMode() || !a || !c) return { on: false, done: p.reqDone || '' };
   const all = units(), u = all.find(x => x.members.includes(c)), o = options(u);
   const cur = a.current && all.find(x => x.key === a.current);
   return {
-    on: true, round: a.round, done: p.reqDone || '', live: cs.liveTable,
+    on: true, round: a.round, done: p.reqDone || '',
     mine: !!u && a.current === u.key, acted: !!u && a.acted.includes(u.key), picks: !!u && !a.current && a.last === u.key && a.acted.length > 0,
     current: cur ? cur.name : '',
     start: o.includes('first') || o.includes('next'), point: o.includes('ppoint'), free: o.includes('free'),
   };
 }
 function publishCombat() {
-  if (cs.enc.started && !cs.liveTable) liveSetup();
   for (const p of cs.party) {
     if (!SH.sheetFor(p)) continue;
     const v = viewFor(p), key = JSON.stringify(v);
@@ -422,63 +421,62 @@ function publishCombat() {
     if (!v.on && !published.has(p.id) && !cs.enc.started) { published.set(p.id, key); continue; }
     published.set(p.id, key);
     const stamped = { ...v, t: Date.now() };
-    // instantly over the live link, and into their sheet file on Drive (which also teaches the sheet the table's code)
-    if (p.charId && cs.liveTable) liveMod().then(L => L?.sendView(cs.liveTable, p.charId, stamped));
+    // instantly over the live link, and into their sheet file on Drive (the saved copy)
+    const lk = keyOf(p);
+    if (lk) liveMod().then(L => L?.cput(lk, 'view', stamped));
     SH.combatState(p, stamped).then(r => { if (r == null) published.delete(p.id); }); // couldn't write: try again next time
   }
   liveWatch();
 }
 
-/* ---------- live link (Firebase): turns arrive instantly; Drive stays the backup ---------- */
+/* ---------- live link (Firebase): everything players see arrives instantly; Drive stays the saved copy ---------- */
+// Each character has its own secret key (from their sheet, via the party file); everything for them lives there.
 const liveMod = () => Promise.resolve(suite()?.live?.() || null).catch(() => null);
-function liveSetup() {
-  if (cs.liveTable) return;
-  liveMod().then(L => { if (!L || cs.liveTable) return; cs.liveTable = L.newTableKey(); touchParty(); });
+const keyOf = p => (p && SH.sheetFor(p)?.liveKey) || '';
+// Change one field of a player's sheet: instantly over the live link, then into the sheet file on Drive
+function liveSheet(p, path, value) {
+  const key = keyOf(p);
+  if (key) liveMod().then(L => L?.cput(key, `sheet/${L.encPath(path)}`, { v: value, t: Date.now() }));
+  SH.setField(p, path, value);
 }
-let liveStop = null, liveFor = '';
-// HP changes already counted here: our own, and players' ones we've applied
-const liveSeen = new Set();
+// Interrupt Points (Active Initiative): ready at the start, recharging ones come back at a new round, all reset at the end
+function liveInterrupts(when) {
+  for (const p of cs.party) {
+    if (!SH.sheetFor(p)) continue;
+    const was = p.ip || 'ready';
+    const next = when === 'round' ? (was === 'recharging' ? 'ready' : was) : 'ready';
+    if (next !== was) { p.ip = next; liveSheet(p, 'ip', next); }
+  }
+}
+// While a fight is on: hear each player's turn buttons and their sheet's numbers (HP, AC, Interrupt Point…)
+const watching = new Map(); // liveKey -> stop function
 function liveWatch() {
-  const want = cs.enc.started && cs.liveTable ? cs.liveTable : '';
-  if (want === liveFor) return;
-  const was = liveFor;
-  liveStop?.(); liveStop = null; liveFor = want;
-  // each fight starts and ends with a clean list of HP changes
-  if (was && !want) liveMod().then(L => L?.put(was, 'ops', null));
-  if (!want) return;
-  liveMod().then(async L => {
-    if (!L || liveFor !== want) return;
-    await L.put(want, 'ops', null);
-    if (liveFor !== want) return;
-    // HP changes players make on their sheets: shown here at once (their sheet's exact numbers follow from Drive)
-    let first = true;
-    const stopOps = L.watch(want, 'ops', all => {
-      for (const [charId, ops] of Object.entries(all || {})) for (const op of Object.values(ops || {})) {
-        if (!op?.id || liveSeen.has(op.id)) continue;
-        liveSeen.add(op.id);
-        if (first || op.by === 'bestiary' || Date.now() - (op.t || 0) > 60000) continue;
-        const p = cs.party.find(x => x.charId === charId); if (!p) continue;
-        const n = Math.max(0, Number(op.n) || 0);
-        if (op.k === 'dmg') { const t = Math.min(p.temp || 0, n); p.temp = (p.temp || 0) - t; p.hp = Math.max(0, p.hp - (n - t)); }
-        else if (op.k === 'heal') p.hp = Math.min(p.maxHp, p.hp + n);
-        else if (op.k === 'temp') p.temp = Math.max(p.temp || 0, n);
-        else if (op.k === 'set') { if (op.cur != null) p.hp = Math.max(0, Number(op.cur) || 0); if (op.temp != null) p.temp = Math.max(0, Number(op.temp) || 0); }
-        else continue;
-        touchParty(); render();
-      }
-      first = false;
+  const want = new Map();
+  if (cs.enc.started) for (const p of cs.party) { const k = keyOf(p); if (k) want.set(k, p.id); }
+  for (const [k, stop] of watching) if (!want.has(k)) {
+    stop(); watching.delete(k);
+    liveMod().then(L => L?.cput(k, 'ops', null)); // each fight ends with a clean list of HP changes
+  }
+  for (const [k, pid] of want) {
+    if (watching.has(k)) continue;
+    watching.set(k, () => {});
+    liveMod().then(async L => {
+      if (!L || !watching.has(k)) return;
+      await L.cput(k, 'ops', null); // and starts with one
+      const stops = [
+        L.cwatch(k, 'stats', s => { if (s && pc(pid)) applySheetStats({ [pid]: s }); }),
+        L.cwatch(k, 'req', req => {
+          const p = pc(pid);
+          if (!p || !req?.id || req.id === p.reqDone) return;
+          p.reqDone = req.id; touchParty();
+          playerRequest(p, req);
+        }),
+      ];
+      if (watching.has(k)) watching.set(k, () => stops.forEach(f => f())); else stops.forEach(f => f());
     });
-    const stopReqs = L.watchRequests(want, all => {
-      for (const [charId, req] of Object.entries(all || {})) {
-        const p = cs.party.find(x => x.charId === charId);
-        if (!p || !req?.id || req.id === p.reqDone) continue;
-        p.reqDone = req.id; touchParty();
-        playerRequest(p, req);
-      }
-    });
-    liveStop = () => { stopOps(); stopReqs(); };
-  });
+  }
 }
+
 // A player tapped Start my turn, Interrupt or End my turn on their sheet
 function playerRequest(p, req) {
   const a = act();
@@ -551,7 +549,7 @@ async function endCombat() {
     ? `${down.length} of ${mons.length} monsters defeated, worth ${xp.toLocaleString()} XP${cs.party.length ? ` (${Math.floor(xp / cs.party.length).toLocaleString()} each for ${cs.party.length} players)` : ''}. Monsters are cleared; players keep their current HP and conditions.`
     : 'Players keep their current HP and conditions.';
   if (!await ctx.confirmBox('End combat?', body, 'End combat')) return;
-  if (activeMode()) SH.interrupts(cs.party, 'end');
+  if (activeMode()) liveInterrupts('end');
   if (!combatShowing) SH.stopLive(); // still on the Combat screen: keep the sheets in step
   cs.enc = { combatants: [], round: 0, turn: -1, started: false, sitOut: [], active: null };
   cs.party.forEach(p => { p.conc = false; });
@@ -562,6 +560,7 @@ async function endCombat() {
 /* ---------- HP + conditions ---------- */
 function applyHp(c, kind, amount) {
   const r = rec(c);
+  const tempBefore = Number(r.temp) || 0;
   if (!(amount > 0)) return ctx.toast('Type an amount first.');
   if (kind === 'damage') {
     let left = amount;
@@ -585,7 +584,10 @@ function applyHp(c, kind, amount) {
     if (SH.sheetFor(r)) {
       const k = { damage: 'dmg', heal: 'heal', temp: 'temp' }[kind];
       const op = { id: 'b' + uid(), t: Date.now(), k, n: amount, by: 'bestiary' };
-      if (r.charId && cs.liveTable) { liveSeen.add(op.id); liveMod().then(L => L?.put(cs.liveTable, `ops/${r.charId}/${op.id}`, op)); }
+      const key = keyOf(r);
+      if (key) liveMod().then(L => L?.cput(key, `ops/${op.id}`, op));
+      // damage that gets past temp HP recharges a spent Interrupt Point
+      if (k === 'dmg' && r.ip === 'spent' && amount > tempBefore) { r.ip = 'recharging'; liveSheet(r, 'ip', 'recharging'); }
       SH.hp(r, kind, amount, op).then(st => { if (st) applySheetStats({ [r.id]: st }); });
     }
   }
@@ -1116,7 +1118,7 @@ function onClick(e) {
       break;
     }
     case 'conc': r.conc = !r.conc; break;
-    case 'exh': r.exh = Math.max(0, Math.min(6, r.exh + +b.dataset.d)); if (+b.dataset.d > 0) exhaustionToast(c); break;
+    case 'exh': r.exh = Math.max(0, Math.min(6, r.exh + +b.dataset.d)); if (+b.dataset.d > 0) exhaustionToast(c); if (c.kind === 'pc') { touchParty(); liveSheet(r, 'exhaustion', r.exh); } break;
     case 'react': c.react = !c.react; break;
     case 'usetoggle': { const u = c.uses[+b.dataset.u]; u.used = !u.used; break; }
     case 'useday': { const u = c.uses[+b.dataset.u]; u.usedN = toggleCount(u.usedN, i); break; }
@@ -1127,8 +1129,8 @@ function onClick(e) {
     }
     case 'leg': c.legUsed = toggleCount(c.legUsed, i); break;
     case 'lr': c.lrUsed = toggleCount(c.lrUsed, i); break;
-    case 'ds': r.death.s = toggleCount(r.death.s, i); break;
-    case 'df': r.death.f = toggleCount(r.death.f, i); break;
+    case 'ds': r.death.s = toggleCount(r.death.s, i); if (c.kind === 'pc') { touchParty(); liveSheet(r, 'death', { ...r.death }); } break;
+    case 'df': r.death.f = toggleCount(r.death.f, i); if (c.kind === 'pc') { touchParty(); liveSheet(r, 'death', { ...r.death }); } break;
     case 'slot': { const s = c.caster.slots[b.dataset.l]; s.used = toggleCount(s.used, i); break; }
     case 'cast': return castMonster(c, +b.dataset.l);
     case 'undocast': return undoCast(c);

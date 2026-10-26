@@ -179,6 +179,14 @@ export function inOtherCampaign(charId) {
   return !!(cur && s && s.campaignId && s.campaignId !== cur);
 }
 
+// One field of a player's sheet, set by the tracker (Interrupt Point, exhaustion, death saves)
+export function setField(p, path, value) {
+  return change(p, c => {
+    if (JSON.stringify(M.getPath ? M.getPath(c, path) : c[path]) === JSON.stringify(value)) return;
+    if (M.setPath) M.setPath(c, path, value); else c[path] = value;
+    M.stamp(c, path);
+  });
+}
 // The player spent their Interrupt Point to interrupt
 export function spendIp(p) {
   return change(p, c => { if (c.ip !== 'spent') { c.ip = 'spent'; M.stamp(c, 'ip'); } });
