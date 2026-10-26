@@ -4,7 +4,7 @@
 // belongs to which character. During combat this reads each linked sheet every few seconds for HP, temp HP,
 // AC and the Interrupt Point, and writes damage and healing back to the sheet as adjustments, so a player
 // healing on their tablet and you dealing damage here at the same moment both count.
-import { driveApi, driveReady } from './sync.js';
+import { driveApi, driveReady, suite } from './sync.js';
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -63,8 +63,10 @@ export async function refreshParty() {
   return true;
 }
 
-// Which sheet is this party member? A chosen link first, otherwise the same name.
+// Which sheet is this party member? Its character's permanent id (the suite's way), then an older chosen link,
+// then the same name (only for members not yet linked to a character).
 export function sheetFor(p) {
+  if (p.charId) return st.list.find(s => s.id === p.charId) || null;
   if (p.sheetId === 'none') return null;
   if (p.sheetId) return st.list.find(s => s.id === p.sheetId) || null;
   const n = norm(p.name), f = first(p.name);
@@ -142,6 +144,26 @@ export function interrupts(party, when) {
     const next = when === 'round' ? (was === 'recharging' ? 'ready' : was) : 'ready';
     if (next !== was) { c.ip = next; M.stamp(c, 'ip'); }
   })));
+}
+
+// The characters in the suite's current campaign (every character, if the campaign isn't known yet)
+export function campaignSheets() {
+  const cur = suite()?.currentCampaign?.()?.id || '';
+  return st.list.filter(s => !cur || !s.campaignId || s.campaignId === cur);
+}
+// A character from another campaign: their member sits out until that campaign is current again
+export function inOtherCampaign(charId) {
+  const cur = suite()?.currentCampaign?.()?.id || '';
+  const s = charId && st.list.find(x => x.id === charId);
+  return !!(cur && s && s.campaignId && s.campaignId !== cur);
+}
+
+// Conditions from the tracker, onto the player's sheet with what each one does (only ones the players may see)
+export function conditions(p, list) {
+  return change(p, c => {
+    if (JSON.stringify(c.conditions || []) === JSON.stringify(list)) return;
+    c.conditions = list; M.stamp(c, 'conditions');
+  });
 }
 
 // While a fight is running, keep looking for changes

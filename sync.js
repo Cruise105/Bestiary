@@ -102,6 +102,8 @@ async function signIn() {
 }
 
 /* ---------- for the character sheet link (sheets.js) ---------- */
+// The suite core (shared campaigns and party), for the combat tracker; null if it couldn't load
+export const suite = () => core;
 export const driveReady = () => ss.connected && tokenValid() && navigator.onLine;
 export async function driveApi(url, opts) { if (!tokenValid()) { const e = new Error('auth'); e.auth = true; throw e; } return api(url, opts); }
 
@@ -211,6 +213,8 @@ export async function syncNow({ interactive = false, quiet = false } = {}) {
       ss.fileId = res.id; ss.remoteModified = res.modifiedTime; ss.lastHash = h;
     }
     const pics = await syncImages();
+    // the suite's current campaign, so the combat tracker's party follows it
+    try { if (core?.loadSuite) { await core.loadSuite(tok.value); window.dispatchEvent(new Event('dmp-suite')); } } catch (e) { if (e.auth) throw e; }
     if (pics && summary) summary.parts.push(`${pics} picture${pics === 1 ? '' : 's'}`);
     const firstTime = !ss.connected;
     ss.connected = true; ss.lastSync = Date.now();

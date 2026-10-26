@@ -21,6 +21,7 @@ let ctx;          // helpers handed in by app.js
 let root;         // #combatView
 const cs = {      // combat state
   party: [],
+  benched: [],    // players whose character is in another campaign: kept, just not in fights until it's current again
   partyUpdated: 0,
   enc: { combatants: [], round: 0, turn: -1, started: false },
   sel: null,      // selected cid
@@ -36,7 +37,7 @@ function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     db.setMeta('encounter', cs.enc);
-    db.setMeta('party', { list: cs.party, updated: cs.partyUpdated });
+    db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
   }, 150);
   ctx?.onChange?.();
 }
@@ -63,31 +64,85 @@ function showLinkStatus() {
 }
 export function combatVisible(on) {
   combatShowing = !!on;
-  if (on) goLive();
+  if (on) { goLive(); syncRoster(); }
   else if (!cs.enc.started) SH.stopLive();
 }
 export async function pullSheetsOnce() { try { applySheetStats(await SH.pull(cs.party)); } catch { /* not signed in */ } }
 
 export async function loadCombat() {
   const [p, e] = await Promise.all([db.getMeta('party'), db.getMeta('encounter')]);
-  if (p) { cs.party = p.list || []; cs.partyUpdated = p.updated || 0; }
+  if (p) { cs.party = p.list || []; cs.benched = p.benched || []; cs.partyUpdated = p.updated || 0; }
   if (e) cs.enc = e;
   goLive();
+  window.addEventListener('dmp-suite', () => syncRoster());
 }
 
-export function partyForBackup() { return { list: cs.party, updated: cs.partyUpdated }; }
+export function partyForBackup() { return { list: cs.party, benched: cs.benched, updated: cs.partyUpdated }; }
 export async function mergePartyFromBackup(p) {
   if (!p || !Array.isArray(p.list)) return false;
   if ((p.updated || 0) <= cs.partyUpdated) return false;
-  cs.party = p.list; cs.partyUpdated = p.updated;
-  await db.setMeta('party', { list: cs.party, updated: cs.partyUpdated });
+  cs.party = p.list; cs.benched = p.benched || []; cs.partyUpdated = p.updated;
+  await db.setMeta('party', { list: cs.party, benched: cs.benched, updated: cs.partyUpdated });
   render();
   return true;
+}
+
+/* ---------- the suite's party: the current campaign's characters, by permanent id ---------- */
+// Players follow the Character Sheet: each member is tied to one character (charId). Characters in the current
+// campaign without a member get one; members whose character is in another campaign sit out (kept, not deleted)
+// until that campaign is current again. Members not tied to a character (allies, NPCs) are left alone.
+let rosterBusy = false;
+async function syncRoster() {
+  if (rosterBusy) return;
+  rosterBusy = true;
+  try {
+    try { await SH.refreshParty(); } catch { /* offline or signed out: use what we last had */ }
+    const sheets = SH.sheetList();
+    if (!sheets.length) return;
+    let changed = false;
+    // older members: tie them to their character once (an earlier chosen sheet, or the same name)
+    for (const p of [...cs.party, ...cs.benched]) {
+      if (p.charId) continue;
+      const s = SH.sheetFor(p);
+      if (s && ![...cs.party, ...cs.benched].some(x => x.charId === s.id)) { p.charId = s.id; delete p.sheetId; changed = true; }
+    }
+    // sit out, or come back, with the campaign
+    const out = cs.party.filter(p => SH.inOtherCampaign(p.charId));
+    const back = cs.benched.filter(p => !SH.inOtherCampaign(p.charId));
+    if (out.length || back.length) {
+      cs.party = cs.party.filter(p => !out.includes(p)).concat(back);
+      cs.benched = cs.benched.filter(p => !back.includes(p)).concat(out);
+      const gone = new Set(out.map(p => p.id));
+      cs.enc.combatants = cs.enc.combatants.filter(c => !(c.kind === 'pc' && gone.has(c.pcId)));
+      changed = true;
+    }
+    // characters in this campaign who aren't in the party yet
+    for (const sh of SH.campaignSheets()) {
+      if ([...cs.party, ...cs.benched].some(p => p.charId === sh.id)) continue;
+      const hp = Number(sh.maxHp) || 10;
+      cs.party.push({ ...newPc(), name: sh.name || 'Unnamed', charId: sh.id, ac: Number(sh.ac) || 10, maxHp: hp, hp: Number(sh.hp) || hp, passive: Number(sh.pp) || 10 });
+      changed = true;
+    }
+    // names follow the sheet
+    for (const p of cs.party) {
+      const sh = p.charId && sheets.find(x => x.id === p.charId);
+      if (sh?.name && sh.name !== p.name) { p.name = sh.name; changed = true; }
+    }
+    if (changed) { touchParty(); render(); if (document.querySelector('#partyDlg')?.open) renderParty(); }
+  } finally { rosterBusy = false; }
+}
+// Conditions the players may see, with what each does, for the character sheet
+function sheetConditions(r) {
+  return (r.conds || []).filter(showOnPlayerView).map(conditionInfo).filter(Boolean)
+    .map(i => ({ name: i.name.replace(/^./, ch => ch.toUpperCase()), text: (i.lines || []).join('\n\n') }));
+}
+function pushConditions(r) {
+  if (SH.sheetFor(r)) SH.conditions(r, sheetConditions(r));
 }
 // Custom condition renamed (or deleted when newName is null): update everyone carrying it
 export function renameCondition(oldName, newName) {
   const fix = r => { if (!r?.conds?.includes(oldName)) return; r.conds = r.conds.filter(x => x !== oldName); if (newName) r.conds.push(newName); };
-  cs.party.forEach(fix);
+  cs.party.forEach(p => { const had = p.conds?.includes(oldName); fix(p); if (had) pushConditions(p); });
   cs.enc.combatants.forEach(x => { if (x.kind === 'monster') fix(x); });
   touchParty(); persist(); render();
 }
@@ -823,17 +878,18 @@ function pcFreeCastsHtml(c) {
 /* ---------- party dialog ---------- */
 function renderParty() {
   const body = document.querySelector('#partyBody');
-  const linkNote = SH.sheetList().length ? `<p class="note">Linked players' HP, AC and Interrupt Points come from their character sheets during combat, and damage you enter here goes onto their sheet.</p>` : '';
+  const linkNote = SH.sheetList().length ? `<p class="note">Players come from the current campaign's characters in the Character Sheet app. Their HP, AC and Interrupt Points come from their sheets during combat, and damage and conditions you set here go onto their sheet. Add a row by hand for allies without a sheet.</p>` : '';
+  const chars = SH.campaignSheets();
   body.innerHTML = linkNote + (cs.party.length ? cs.party.map(p => `<div class="prow" data-id="${p.id}">
       <label class="f wide2">Name<input class="field" data-p="name" value="${esc(p.name)}" placeholder="Character name"></label>
       <label class="f">AC<input class="field" data-p="ac" type="number" inputmode="numeric" value="${p.ac}"></label>
       <label class="f">Max HP<input class="field" data-p="maxHp" type="number" inputmode="numeric" value="${p.maxHp}"></label>
       <label class="f">Passive Perc.<input class="field" data-p="passive" type="number" inputmode="numeric" value="${p.passive}"></label>
-      <label class="f wide2">Character sheet<select class="field" data-p="sheetId">
-        <option value="">${SH.sheetFor({ ...p, sheetId: '' }) ? `Match by name (${esc(SH.sheetFor({ ...p, sheetId: '' }).name)})` : 'Match by name'}</option>
-        <option value="none" ${p.sheetId === 'none' ? 'selected' : ''}>Not linked</option>
-        ${SH.sheetList().map(s => `<option value="${esc(s.id)}" ${p.sheetId === s.id ? 'selected' : ''}>${esc(s.name || 'Unnamed')}</option>`).join('')}
-      </select></label>
+      ${SH.sheetList().length ? `<label class="f wide2">Character sheet<select class="field" data-p="charId">
+        <option value="">${p.charId ? 'Not linked' : 'Not linked (ally or NPC)'}</option>
+        ${p.charId && !chars.some(s => s.id === p.charId) ? `<option value="${esc(p.charId)}" selected>${esc(SH.sheetFor(p)?.name || 'A character not in this campaign')}</option>` : ''}
+        ${chars.map(s => `<option value="${esc(s.id)}" ${p.charId === s.id ? 'selected' : ''}>${esc(s.name || 'Unnamed')}</option>`).join('')}
+      </select></label>` : ''}
       <label class="chk"><input type="checkbox" data-p="strainOn" ${p.strainOn ? 'checked' : ''}> Track free 5th/6th casts</label>
       <button class="btn danger" type="button" data-pa="del">Remove</button>
     </div>`).join('') : '<p class="note">No players yet. Add your party once and they join every combat.</p>');
@@ -845,7 +901,7 @@ function readParty() {
     row.querySelectorAll('[data-p]').forEach(el => {
       const k = el.dataset.p;
       if (k === 'strainOn') p.strainOn = el.checked;
-      else if (k === 'sheetId') p.sheetId = el.value;
+      else if (k === 'charId') { p.charId = el.value; if (!p.charId) p.sheetId = 'none'; else delete p.sheetId; }
       else if (k === 'name') p.name = el.value.trim();
       else {
         const v = +el.value || 0;
@@ -906,7 +962,7 @@ function onClick(e) {
       return showPictureToPlayers(mm, sc.hideName ? 'Unknown creature' : mm.name); }
     case 'hidepic': return hidePictureFromPlayers();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
-    case 'party': renderParty(); document.querySelector('#partyDlg').showModal(); SH.refreshParty().then(ch => { if (ch) renderParty(); }).catch(() => {}); pullSheetsOnce(); return;
+    case 'party': renderParty(); document.querySelector('#partyDlg').showModal(); syncRoster().then(() => renderParty()).catch(() => {}); pullSheetsOnce(); return;
     case 'addmon': document.querySelector('#addQ').value = ''; renderAddList(); document.querySelector('#addDlg').showModal(); return;
     case 'sel': cs.sel = b.dataset.cid; render(); if (root.dataset.view !== 'detail') ctx.pushDetail(); root.dataset.view = 'detail'; root.querySelector('.cdetail').scrollTop = 0; return;
     case 'back': history.state?.view === 'cdetail' ? history.back() : (root.dataset.view = 'list'); return;
@@ -919,6 +975,7 @@ function onClick(e) {
     case 'cond': {
       const k = b.dataset.k; r.conds = r.conds || [];
       r.conds = r.conds.includes(k) ? r.conds.filter(x => x !== k) : [...r.conds, k];
+      if (c.kind === 'pc') { touchParty(); pushConditions(r); } // onto their character sheet too
       break;
     }
     case 'conc': r.conc = !r.conc; break;
