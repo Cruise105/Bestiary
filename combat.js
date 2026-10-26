@@ -55,7 +55,12 @@ function applySheetStats(res) {
 }
 // Sheets are checked every few seconds while a fight is running or the Combat screen is open
 let combatShowing = false;
-function goLive() { if (cs.enc.started || combatShowing) SH.startLive(() => cs.party, applySheetStats); }
+function goLive() { if (cs.enc.started || combatShowing) SH.startLive(() => cs.party, applySheetStats, showLinkStatus); }
+function showLinkStatus() {
+  const el = document.querySelector('#sheetLink'); if (!el) return;
+  const st = SH.linkStatus();
+  el.textContent = st.text; el.hidden = !st.text; el.classList.toggle('bad', !st.ok);
+}
 export function combatVisible(on) {
   combatShowing = !!on;
   if (on) goLive();
@@ -453,7 +458,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<':
 const pips = (n, used, act, extra = '', label = '') =>
   Array.from({ length: n }, (_, i) => `<button type="button" class="pip${i < used ? ' on' : ''}" data-c="${act}" data-i="${i}" ${extra} aria-label="${label} ${i + 1}${i < used ? ', used' : ''}"></button>`).join('');
 
-export function render() {
+export function render() { renderInner(); showLinkStatus(); }
+function renderInner() {
   if (!root) return;
   ensurePartyInEncounter();
   ensureLairs();
@@ -494,6 +500,7 @@ export function render() {
       <button class="btn" type="button" data-c="party">Party</button>
       ${e.combatants.some(c => c.kind === 'monster') || e.started ? '<button class="btn danger" type="button" data-c="end">End combat</button>' : ''}
     </div>
+    <p class="sheetlink" id="sheetLink" hidden></p>
     <div class="cmain">
       <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${(AI ? activeListHtml() : e.combatants.map((c, i) => rowHtml(c, i)).join('')) || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
       <section class="cdetail" aria-live="polite">${detailHtml()}</section>

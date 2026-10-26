@@ -12,7 +12,16 @@ const PARTY_FILE = 'charsheet-party.json';
 const POLL_MS = 4000;
 
 let M = null, R = null;        // the Character Sheets app's own HP and rules code, so both apps agree
-const st = { list: [], partyModified: '', files: {}, timer: null, onUpdate: null, error: '' };
+const st = { list: [], partyModified: '', files: {}, timer: null, onUpdate: null, error: '', lastOk: 0, wrote: '', onStatus: null };
+// What the link is doing, for the line on the Combat screen
+export function linkStatus() {
+  if (st.error) return { ok: false, text: st.error };
+  if (!st.list.length) return { ok: true, text: '' };
+  if (!st.lastOk) return { ok: true, text: 'Character sheets: checking…' };
+  const s = Math.round((Date.now() - st.lastOk) / 1000);
+  return { ok: true, text: `Character sheets: checked ${s < 5 ? 'just now' : `${s} s ago`}${st.wrote ? ` · ${st.wrote}` : ''}` };
+}
+const why = (e, what) => `${what}: ${e.status ? `Google answered ${e.status}` : 'no answer'}${e.message && e.message !== 'auth' ? ` (${e.message})` : ''}.`;
 
 async function modules() {
   if (M && R) return true;
@@ -88,9 +97,9 @@ export async function pull(party) {
       if (c?.app !== 'charsheet') continue;
       st.files[s.fileId] = { modified: m.modifiedTime };
       out[p.id] = statsOf(c);
-    } catch (e) { if (e.auth) throw e; }
+    } catch (e) { st.error = why(e, `Couldn't read ${p.name}'s sheet`); st.onStatus?.(); if (e.auth) throw e; return out; }
   }
-  st.error = '';
+  st.error = ''; st.lastOk = Date.now(); st.onStatus?.();
   return out;
 }
 
@@ -104,8 +113,9 @@ async function change(p, fn) {
     fn(c);
     await writeSheet(s.fileId, c);
     delete st.files[s.fileId]; // re-read on the next poll
+    st.error = ''; st.wrote = `sent to ${p.name}'s sheet ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`; st.onStatus?.();
     return statsOf(c);
-  } catch (e) { st.error = e.auth ? 'Sign in to Google again to keep sheets in step.' : "Couldn't update a character sheet just now."; return null; }
+  } catch (e) { st.error = e.auth && !e.status ? 'Sign in to Google again to keep sheets in step.' : why(e, `Couldn't write to ${p.name}'s sheet`); st.onStatus?.(); return null; }
 }
 
 // Damage, healing or temp HP from the tracker. Damage that gets past temp HP recharges a spent Interrupt Point.
@@ -127,11 +137,14 @@ export function interrupts(party, when) {
 }
 
 // While a fight is running, keep looking for changes
-export function startLive(getParty, onUpdate) {
-  st.onUpdate = onUpdate;
+export function startLive(getParty, onUpdate, onStatus) {
+  st.onUpdate = onUpdate; if (onStatus) st.onStatus = onStatus;
   if (st.timer) return;
   const tick = async () => {
-    try { const res = await pull(getParty()); if (Object.keys(res).length) st.onUpdate?.(res); } catch { /* signed out: the sync button shows it */ }
+    try { const res = await pull(getParty()); if (Object.keys(res).length) st.onUpdate?.(res); }
+    catch (e) { if (!st.error) st.error = why(e, "Couldn't reach the character sheets"); }
+    if (!driveReady()) st.error = 'Not signed in to Google here, so character sheets can\'t be read. Tap the sync button to sign in.';
+    st.onStatus?.();
   };
   tick();
   st.timer = setInterval(tick, POLL_MS);

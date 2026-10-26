@@ -94,8 +94,11 @@ export async function driveApi(url, opts) { if (!tokenValid()) { const e = new E
 async function api(url, opts = {}) {
   const r = await fetch(url, { ...opts, headers: { Authorization: `Bearer ${tok.value}`, ...(opts.headers || {}) } });
   if (r.status === 401 || r.status === 403) {
-    tok.value = null; saveToken();
-    const err = new Error('auth'); err.auth = true; throw err;
+    // 401: sign-in expired. 403: Google refused this particular file (kept the sign-in so other files still work)
+    let why = '';
+    try { why = (await r.clone().json())?.error?.message || ''; } catch { /* no details */ }
+    if (r.status === 401 || !/files\/[^/?]+/.test(url) || /appDataFolder/.test(url)) { tok.value = null; saveToken(); }
+    const err = new Error(why || 'auth'); err.auth = r.status === 401 || !tok.value; err.status = r.status; throw err;
   }
   if (!r.ok) throw new Error(`Google Drive answered with an error (${r.status}).`);
   return r;
