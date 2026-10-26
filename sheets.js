@@ -9,7 +9,7 @@ import { driveApi, driveReady, suite } from './sync.js';
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const PARTY_FILE = 'charsheet-party.json';
-const POLL_MS = 4000;
+const POLL_MS = 1500; // during a fight; one request covers every sheet, so this stays light
 
 let M = null, R = null;        // the Character Sheets app's own HP and rules code, so both apps agree
 const st = { list: [], partyModified: '', files: {}, timer: null, onUpdate: null, error: '', lastOk: 0, wrote: '', onStatus: null };
@@ -59,6 +59,7 @@ export async function refreshParty() {
   const data = await (await driveApi(`${API}/${f.id}?alt=media`)).json();
   if (data?.app !== 'charsheet-party') return false;
   st.list = (data.chars || []).filter(c => c.fileId);
+  st.folderId = data.folderId || '';
   st.partyModified = f.modifiedTime;
   return true;
 }
@@ -94,14 +95,31 @@ async function writeSheet(fileId, data) {
 }
 
 // Pull every linked sheet that changed since the last look; returns { partyMemberId: stats }
+// Every sheet's last-changed time in one request (they all live in the DM's Character Sheets folder)
+async function folderTimes() {
+  if (!st.folderId) return null;
+  const q = encodeURIComponent(`'${st.folderId}' in parents and trashed=false`);
+  const r = await (await driveApi(`${API}?q=${q}&fields=files(id,modifiedTime)&pageSize=200`)).json();
+  return new Map((r.files || []).map(f => [f.id, f.modifiedTime]));
+}
+let pulling = false;
 export async function pull(party) {
   if (!driveReady() || !(await modules())) return {};
-  await refreshParty().catch(() => {});
+  if (pulling) return {};
+  pulling = true;
+  try { return await pullAll(party); } finally { pulling = false; }
+}
+let partyTick = 0;
+async function pullAll(party) {
+  // the party file changes rarely: look at it every 10th check
+  if (partyTick++ % 10 === 0 || !st.list.length) await refreshParty().catch(() => {});
+  let times = null;
+  try { times = await folderTimes(); } catch (e) { if (e.auth) throw e; times = null; }
   const out = {};
   for (const p of party) {
     const s = sheetFor(p); if (!s) continue;
     try {
-      const m = await (await driveApi(`${API}/${s.fileId}?fields=modifiedTime`)).json();
+      const m = times?.has(s.fileId) ? { modifiedTime: times.get(s.fileId) } : await (await driveApi(`${API}/${s.fileId}?fields=modifiedTime`)).json();
       const known = st.files[s.fileId];
       if (known && known.modified === m.modifiedTime) continue;
       const c = await readSheet(s.fileId);
