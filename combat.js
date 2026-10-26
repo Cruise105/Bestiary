@@ -144,7 +144,10 @@ function sheetConditions(r) {
     .map(i => ({ name: i.name.replace(/^./, ch => ch.toUpperCase()), text: (i.lines || []).join('\n\n') }));
 }
 function pushConditions(r) {
-  if (SH.sheetFor(r)) SH.conditions(r, sheetConditions(r));
+  if (!SH.sheetFor(r)) return;
+  const list = sheetConditions(r);
+  if (r.charId && cs.liveTable) liveMod().then(L => L?.put(cs.liveTable, `conds/${r.charId}`, { list, t: Date.now() }));
+  SH.conditions(r, list);
 }
 // Custom condition renamed (or deleted when newName is null): update everyone carrying it
 export function renameCondition(oldName, newName) {
@@ -433,14 +436,39 @@ function liveSetup() {
   liveMod().then(L => { if (!L || cs.liveTable) return; cs.liveTable = L.newTableKey(); touchParty(); });
 }
 let liveStop = null, liveFor = '';
+// HP changes already counted here: our own, and players' ones we've applied
+const liveSeen = new Set();
 function liveWatch() {
-  const want = cs.enc.started && activeMode() && cs.liveTable ? cs.liveTable : '';
+  const want = cs.enc.started && cs.liveTable ? cs.liveTable : '';
   if (want === liveFor) return;
+  const was = liveFor;
   liveStop?.(); liveStop = null; liveFor = want;
+  // each fight starts and ends with a clean list of HP changes
+  if (was && !want) liveMod().then(L => L?.put(was, 'ops', null));
   if (!want) return;
-  liveMod().then(L => {
+  liveMod().then(async L => {
     if (!L || liveFor !== want) return;
-    liveStop = L.watchRequests(want, all => {
+    await L.put(want, 'ops', null);
+    if (liveFor !== want) return;
+    // HP changes players make on their sheets: shown here at once (their sheet's exact numbers follow from Drive)
+    let first = true;
+    const stopOps = L.watch(want, 'ops', all => {
+      for (const [charId, ops] of Object.entries(all || {})) for (const op of Object.values(ops || {})) {
+        if (!op?.id || liveSeen.has(op.id)) continue;
+        liveSeen.add(op.id);
+        if (first || op.by === 'bestiary' || Date.now() - (op.t || 0) > 60000) continue;
+        const p = cs.party.find(x => x.charId === charId); if (!p) continue;
+        const n = Math.max(0, Number(op.n) || 0);
+        if (op.k === 'dmg') { const t = Math.min(p.temp || 0, n); p.temp = (p.temp || 0) - t; p.hp = Math.max(0, p.hp - (n - t)); }
+        else if (op.k === 'heal') p.hp = Math.min(p.maxHp, p.hp + n);
+        else if (op.k === 'temp') p.temp = Math.max(p.temp || 0, n);
+        else if (op.k === 'set') { if (op.cur != null) p.hp = Math.max(0, Number(op.cur) || 0); if (op.temp != null) p.temp = Math.max(0, Number(op.temp) || 0); }
+        else continue;
+        touchParty(); render();
+      }
+      first = false;
+    });
+    const stopReqs = L.watchRequests(want, all => {
       for (const [charId, req] of Object.entries(all || {})) {
         const p = cs.party.find(x => x.charId === charId);
         if (!p || !req?.id || req.id === p.reqDone) continue;
@@ -448,6 +476,7 @@ function liveWatch() {
         playerRequest(p, req);
       }
     });
+    liveStop = () => { stopOps(); stopReqs(); };
   });
 }
 // A player tapped Start my turn, Interrupt or End my turn on their sheet
@@ -551,8 +580,14 @@ function applyHp(c, kind, amount) {
   }
   if (c.kind === 'pc') {
     touchParty();
-    // write it to their character sheet too (as an adjustment, so nobody's change is lost)
-    if (SH.sheetFor(r)) SH.hp(r, kind, amount).then(st => { if (st) applySheetStats({ [r.id]: st }); });
+    // write it to their character sheet too (as an adjustment, so nobody's change is lost): instantly over the
+    // live link, and into the sheet file; both carry the same id, so it only counts once
+    if (SH.sheetFor(r)) {
+      const k = { damage: 'dmg', heal: 'heal', temp: 'temp' }[kind];
+      const op = { id: 'b' + uid(), t: Date.now(), k, n: amount, by: 'bestiary' };
+      if (r.charId && cs.liveTable) { liveSeen.add(op.id); liveMod().then(L => L?.put(cs.liveTable, `ops/${r.charId}/${op.id}`, op)); }
+      SH.hp(r, kind, amount, op).then(st => { if (st) applySheetStats({ [r.id]: st }); });
+    }
   }
   persist(); render();
 }

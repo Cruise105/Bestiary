@@ -148,11 +148,13 @@ async function change(p, fn) {
 }
 
 // Damage, healing or temp HP from the tracker. Damage that gets past temp HP recharges a spent Interrupt Point.
-export function hp(p, kind, n) {
+// op: { id, t } when the same change already went out over the live link, so both copies count once
+export function hp(p, kind, n, op = {}) {
   const k = { damage: 'dmg', heal: 'heal', temp: 'temp' }[kind]; if (!k) return null;
   return change(p, c => {
     const before = Number(c.hp?.temp) || 0;
-    M.hpOp(c, { k, n, by: 'bestiary' });
+    if ((c.hpOps || []).some(o => o.id === op.id)) return; // the sheet already has it
+    M.hpOp(c, { ...op, k, n, by: 'bestiary' });
     if (k === 'dmg' && n > before && c.ip === 'spent') { c.ip = 'recharging'; M.stamp(c, 'ip'); }
   });
 }
