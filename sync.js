@@ -272,6 +272,8 @@ export async function initSync(helpers) {
   if (saved) Object.assign(ss, saved);
   await loadCore();
   loadToken();
+  // Already holding a working sign-in from an earlier visit? Let the other apps use it too.
+  if (tok.value && tok.exp > Date.now() + 30000) core?.offer?.({ value: tok.value, exp: tok.exp, scope: SCOPE }, { app: 'bestiary' });
   status = ss.connected ? (tokenValid() ? 'ok' : 'signin') : 'off';
   renderStatus();
 
