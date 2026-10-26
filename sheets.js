@@ -19,20 +19,28 @@ export function linkStatus() {
   if (!st.list.length) return { ok: true, text: '' };
   if (!st.lastOk) return { ok: true, text: 'Character sheets: checking…' };
   const s = Math.round((Date.now() - st.lastOk) / 1000);
-  return { ok: true, text: `Character sheets: checked ${s < 5 ? 'just now' : `${s} s ago`}${st.wrote ? ` · ${st.wrote}` : ''}` };
+  return { ok: true, text: `Character sheets: checked ${s < 5 ? 'just now' : `${s} s ago`}${st.wrote ? ` · ${st.wrote}` : ''}${st.via && st.via !== 'live' ? ` · using ${st.via}` : ''}` };
 }
 const why = (e, what) => `${what}: ${e.status ? `Google answered ${e.status}` : 'no answer'}${e.message && e.message !== 'auth' ? ` (${e.message})` : ''}.`;
 
 async function modules() {
   if (M && R) return true;
-  // GitHub Pages addresses follow the repository name's capitals (yours is Character-Sheet); try both spellings
+  // The Character Sheets app's own HP and rules code first, so both apps always agree. GitHub Pages addresses follow
+  // the repository name's capitals (yours is Character-Sheet), so both spellings are tried. If the browser won't load
+  // them (an ad blocker, a slow connection), the Bestiary's own copy (cs-model.js, cs-rules.js) is used instead.
+  const why = [];
   for (const base of ['../Character-Sheet/js/', '../character-sheet/js/']) {
     try {
       [M, R] = await Promise.all([import(`${base}model.js`), import(`${base}rules.js`)]);
-      return true;
-    } catch { M = R = null; }
+      st.via = 'live'; return true;
+    } catch (e) { M = R = null; why.push(e?.message || String(e)); }
   }
-  st.error = "Couldn't load the Character Sheets app from this site.";
+  try {
+    [M, R] = await Promise.all([import('./cs-model.js'), import('./cs-rules.js')]);
+    st.via = `the Bestiary's own copy (couldn't load the Character Sheets app's: ${why[0] || 'no reason given'})`;
+    return true;
+  } catch (e) { M = R = null; }
+  st.error = `Couldn't load the Character Sheets app from this site (${why[0] || 'no reason given'}).`;
   return false;
 }
 
