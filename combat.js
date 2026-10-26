@@ -4,7 +4,6 @@
 import { db } from './db.js';
 import { HP_BY_CR } from './parser.js';
 import { STANDARD, customConditions, conditionInfo, showOnPlayerView } from './conditions.js';
-import * as SH from './sheets.js';
 
 const CONDITIONS = ['blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious'];
@@ -42,37 +41,10 @@ function persist() {
 }
 function touchParty() { cs.partyUpdated = Date.now(); persist(); }
 
-/* ---------- live link to character sheets ---------- */
-// Numbers from a player's sheet replace the tracker's copy (the sheet is where HP lives)
-function applySheetStats(res) {
-  let any = false;
-  for (const [id, s] of Object.entries(res)) {
-    const p = pc(id); if (!p) continue;
-    for (const k of ['hp', 'temp', 'maxHp', 'ac', 'passive', 'ip', 'exh', 'form']) if (s[k] != null && p[k] !== s[k]) { p[k] = s[k]; any = true; }
-    p.linked = true;
-  }
-  if (any) { persist(); render(); }
-}
-// Sheets are checked every few seconds while a fight is running or the Combat screen is open
-let combatShowing = false;
-function goLive() { if (cs.enc.started || combatShowing) SH.startLive(() => cs.party, applySheetStats, showLinkStatus); }
-function showLinkStatus() {
-  const el = document.querySelector('#sheetLink'); if (!el) return;
-  const st = SH.linkStatus();
-  el.textContent = st.text; el.hidden = !st.text; el.classList.toggle('bad', !st.ok);
-}
-export function combatVisible(on) {
-  combatShowing = !!on;
-  if (on) goLive();
-  else if (!cs.enc.started) SH.stopLive();
-}
-export async function pullSheetsOnce() { try { applySheetStats(await SH.pull(cs.party)); } catch { /* not signed in */ } }
-
 export async function loadCombat() {
   const [p, e] = await Promise.all([db.getMeta('party'), db.getMeta('encounter')]);
   if (p) { cs.party = p.list || []; cs.partyUpdated = p.updated || 0; }
   if (e) cs.enc = e;
-  goLive();
 }
 
 export function partyForBackup() { return { list: cs.party, updated: cs.partyUpdated }; }
@@ -257,7 +229,6 @@ function startActive() {
   cs.enc.active = { round: 1, acted: [], current: null, last: null, hurt: [], hurtAfter: [], ip: { max: players, left: players, round: 0 }, history: [] };
   cs.enc.started = true; cs.enc.round = 1; cs.enc.turn = -1;
   persist(); render();
-  SH.interrupts(cs.party, 'start'); goLive();
   ctx.toast('Who triggered the scene? Tap Goes first on them.');
 }
 
@@ -278,7 +249,6 @@ function endTurnActive() {
   const left = units().filter(u => !u.down && !a.acted.includes(u.key));
   if (!left.length) {
     a.round++; cs.enc.round = a.round; a.acted = []; a.hurtAfter = [];
-    SH.interrupts(cs.party, 'round'); // players' recharging Interrupt Points are ready again
     const lastU = units().find(u => u.key === a.last);
     ctx.toast(`Round ${a.round}. ${lastU ? lastU.name : 'The last to act'} picks who starts (not themselves).`);
   }
@@ -327,7 +297,6 @@ function startCombat() {
   if (missing.length) return ctx.toast(`Enter initiative for ${missing.map(nameOf).slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}`);
   sortOrder();
   cs.enc.started = true; cs.enc.round = 1; cs.enc.turn = 0;
-  goLive();
   beginTurn(cs.enc.combatants[0]);
   cs.sel = cs.enc.combatants[0].cid;
   persist(); render();
@@ -365,8 +334,6 @@ async function endCombat() {
     ? `${down.length} of ${mons.length} monsters defeated, worth ${xp.toLocaleString()} XP${cs.party.length ? ` (${Math.floor(xp / cs.party.length).toLocaleString()} each for ${cs.party.length} players)` : ''}. Monsters are cleared; players keep their current HP and conditions.`
     : 'Players keep their current HP and conditions.';
   if (!await ctx.confirmBox('End combat?', body, 'End combat')) return;
-  if (activeMode()) SH.interrupts(cs.party, 'end');
-  if (!combatShowing) SH.stopLive(); // still on the Combat screen: keep the sheets in step
   cs.enc = { combatants: [], round: 0, turn: -1, started: false, sitOut: [], active: null };
   cs.party.forEach(p => { p.conc = false; });
   cs.sel = null;
@@ -392,11 +359,7 @@ function applyHp(c, kind, amount) {
   } else if (kind === 'temp') {
     r.temp = Math.max(r.temp, amount); // temp HP doesn't stack
   }
-  if (c.kind === 'pc') {
-    touchParty();
-    // write it to their character sheet too (as an adjustment, so nobody's change is lost)
-    if (SH.sheetFor(r)) SH.hp(r, kind, amount).then(st => { if (st) applySheetStats({ [r.id]: st }); });
-  }
+  if (c.kind === 'pc') touchParty();
   persist(); render();
 }
 
@@ -458,8 +421,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<':
 const pips = (n, used, act, extra = '', label = '') =>
   Array.from({ length: n }, (_, i) => `<button type="button" class="pip${i < used ? ' on' : ''}" data-c="${act}" data-i="${i}" ${extra} aria-label="${label} ${i + 1}${i < used ? ', used' : ''}"></button>`).join('');
 
-export function render() { renderInner(); showLinkStatus(); }
-function renderInner() {
+export function render() {
   if (!root) return;
   ensurePartyInEncounter();
   ensureLairs();
@@ -500,7 +462,6 @@ function renderInner() {
       <button class="btn" type="button" data-c="party">Party</button>
       ${e.combatants.some(c => c.kind === 'monster') || e.started ? '<button class="btn danger" type="button" data-c="end">End combat</button>' : ''}
     </div>
-    <p class="sheetlink" id="sheetLink" hidden></p>
     <div class="cmain">
       <ol class="clist" aria-label="Initiative order">${e.loaded ? `<li class="cnote"><b>${esc(e.loaded.name)}</b>${e.loaded.notes ? ` ${esc(e.loaded.notes)}` : ''}</li>` : ''}${(AI ? activeListHtml() : e.combatants.map((c, i) => rowHtml(c, i)).join('')) || `<li class="cempty">No one here yet. Add your players under Party, then add monsters from the library or with Add monsters.</li>`}</ol>
       <section class="cdetail" aria-live="polite">${detailHtml()}</section>
@@ -661,7 +622,7 @@ function rowHtml(c, i, opt = null) {
       <span class="cinit">${initCell ?? (e.started || c.init != null ? (c.init ?? '–') : '')}</span>
       <span class="cname">${esc(nameOf(c))}${state === 'down' ? ' <small>down</small>' : state === 'dying' ? ' <small>at 0 HP</small>' : state === 'dead' ? ' <small>dead</small>' : ''}</span>
       <span class="cac">AC ${esc(r.ac)}</span>
-      <span class="chp">${r.form ? `<small class="asform">as ${esc(r.form)}</small> ` : ''}<b>${r.hp}</b>/${r.maxHp}${r.temp ? ` <i>+${r.temp}</i>` : ''}${c.kind === 'pc' && r.linked && activeMode() && r.ip ? ` <span class="ipst ip-${esc(r.ip)}" title="Interrupt Point on their sheet">IP ${esc({ ready: 'ready', spent: 'spent', recharging: 'recharging' }[r.ip] || r.ip)}</span>` : ''}</span>
+      <span class="chp"><b>${r.hp}</b>/${r.maxHp}${r.temp ? ` <i>+${r.temp}</i>` : ''}</span>
       <span class="hpbar" aria-hidden="true"><span style="width:${hpPct}%"></span></span>
       ${chips.length ? `<span class="chips">${chips.map(x => `<span>${esc(x)}</span>`).join('')}</span>` : ''}
     </button>
@@ -685,7 +646,6 @@ function detailHtml() {
 
   // HP
   sections.push(`<div class="dbox hpbox">
-    ${r.form ? `<p class="dsub">Wild Shaped (or in a form) as <b>${esc(r.form)}</b>. Damage comes off the form first; the sheet carries any extra over.</p>` : ''}
     <div class="hpbig"><span class="hpnow">${r.hp}</span><span class="hpmax">/ ${r.maxHp}</span>${r.temp ? `<span class="hptemp">+${r.temp} temp</span>` : ''}</div>
     ${c.hpNote ? `<p class="note" style="margin-top:2px">${esc(c.hpNote)}</p>` : ''}
     <div class="hpctl">
@@ -823,20 +783,14 @@ function pcFreeCastsHtml(c) {
 /* ---------- party dialog ---------- */
 function renderParty() {
   const body = document.querySelector('#partyBody');
-  const linkNote = SH.sheetList().length ? `<p class="note">Linked players' HP, AC and Interrupt Points come from their character sheets during combat, and damage you enter here goes onto their sheet.</p>` : '';
-  body.innerHTML = linkNote + (cs.party.length ? cs.party.map(p => `<div class="prow" data-id="${p.id}">
+  body.innerHTML = cs.party.length ? cs.party.map(p => `<div class="prow" data-id="${p.id}">
       <label class="f wide2">Name<input class="field" data-p="name" value="${esc(p.name)}" placeholder="Character name"></label>
       <label class="f">AC<input class="field" data-p="ac" type="number" inputmode="numeric" value="${p.ac}"></label>
       <label class="f">Max HP<input class="field" data-p="maxHp" type="number" inputmode="numeric" value="${p.maxHp}"></label>
       <label class="f">Passive Perc.<input class="field" data-p="passive" type="number" inputmode="numeric" value="${p.passive}"></label>
-      <label class="f wide2">Character sheet<select class="field" data-p="sheetId">
-        <option value="">${SH.sheetFor({ ...p, sheetId: '' }) ? `Match by name (${esc(SH.sheetFor({ ...p, sheetId: '' }).name)})` : 'Match by name'}</option>
-        <option value="none" ${p.sheetId === 'none' ? 'selected' : ''}>Not linked</option>
-        ${SH.sheetList().map(s => `<option value="${esc(s.id)}" ${p.sheetId === s.id ? 'selected' : ''}>${esc(s.name || 'Unnamed')}</option>`).join('')}
-      </select></label>
       <label class="chk"><input type="checkbox" data-p="strainOn" ${p.strainOn ? 'checked' : ''}> Track free 5th/6th casts</label>
       <button class="btn danger" type="button" data-pa="del">Remove</button>
-    </div>`).join('') : '<p class="note">No players yet. Add your party once and they join every combat.</p>');
+    </div>`).join('') : '<p class="note">No players yet. Add your party once and they join every combat.</p>';
 }
 
 function readParty() {
@@ -845,7 +799,6 @@ function readParty() {
     row.querySelectorAll('[data-p]').forEach(el => {
       const k = el.dataset.p;
       if (k === 'strainOn') p.strainOn = el.checked;
-      else if (k === 'sheetId') p.sheetId = el.value;
       else if (k === 'name') p.name = el.value.trim();
       else {
         const v = +el.value || 0;
@@ -906,7 +859,7 @@ function onClick(e) {
       return showPictureToPlayers(mm, sc.hideName ? 'Unknown creature' : mm.name); }
     case 'hidepic': return hidePictureFromPlayers();
     case 'saveenc': return ctx.saveEncounter(monsterCounts(), cs.enc.loaded);
-    case 'party': renderParty(); document.querySelector('#partyDlg').showModal(); SH.refreshParty().then(ch => { if (ch) renderParty(); }).catch(() => {}); pullSheetsOnce(); return;
+    case 'party': renderParty(); return document.querySelector('#partyDlg').showModal();
     case 'addmon': document.querySelector('#addQ').value = ''; renderAddList(); document.querySelector('#addDlg').showModal(); return;
     case 'sel': cs.sel = b.dataset.cid; render(); if (root.dataset.view !== 'detail') ctx.pushDetail(); root.dataset.view = 'detail'; root.querySelector('.cdetail').scrollTop = 0; return;
     case 'back': history.state?.view === 'cdetail' ? history.back() : (root.dataset.view = 'list'); return;

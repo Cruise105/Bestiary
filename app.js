@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { combatVisible, showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
+import { showPictureToPlayers, hidePictureFromPlayers, pictureShowingFor, renameCondition, initCombat, loadCombat, render as renderCombat, addMonsterToCombat, combatantCount, monsterCount, clearMonsters, setLoaded, partyForBackup, mergePartyFromBackup } from './combat.js';
 import { initSync } from './sync.js';
 import { initConditions, loadConditions, openConditions, conditionsForBackup, mergeConditionsFromBackup } from './conditions.js';
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
@@ -83,7 +83,6 @@ function setMode(m) {
   document.querySelectorAll('.libonly').forEach(b => { b.hidden = m !== 'library'; });
   document.querySelectorAll('.modes button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
   if (m === 'combat') { $('#combatView').dataset.view = 'list'; renderCombat(); }
-  combatVisible(m === 'combat');
 }
 function updateBadge() {
   const n = combatantCount();
@@ -620,13 +619,12 @@ async function onDetailAction(act, btn) {
       break;
     }
     case 'delete': {
-      if (!await confirmBox(`Delete ${m.name}?`, m.id.startsWith('srd-') ? 'It is removed from your library. Backups you load later can bring it back.' : 'This removes it from this device. If it is in a backup file, loading that backup brings it back.', 'Delete')) return;
+      if (!await confirmBox(`Delete ${m.name}?`, 'It is removed from your library here and, with Drive sync on, from your other devices too.', 'Delete')) return;
       await db.del(m.id);
       await db.delImage(m.id);
-      if (m.id.startsWith('srd-')) {
-        state.deletedSrd = state.deletedSrd.filter(d => d.id !== m.id).concat({ id: m.id, at: now() });
-        await db.setMeta('deletedSrd', state.deletedSrd);
-      }
+      // Remember the deletion (any monster, not just SRD) so sync and backups carry it to other devices
+      state.deletedSrd = state.deletedSrd.filter(d => d.id !== m.id).concat({ id: m.id, at: now() });
+      await db.setMeta('deletedSrd', state.deletedSrd);
       setMonsters(state.monsters.filter(x => x.id !== m.id));
       state.selectedId = null; renderDetail(); setView('list', false);
       toast(`Deleted ${m.name}`);
@@ -726,8 +724,12 @@ async function mergeBackupData(data) {
   const existing = new Map((await db.all()).map(m => [m.id, m]));
   let added = 0, updated = 0, kept = 0, removed = 0;
   const toPut = [];
+  // Deletions from both sides: the newest record of each deleted monster
+  const gone = new Map(state.deletedSrd.map(d => [d.id, d.at]));
+  for (const d of data.deletedSrd || []) if (d?.id && (d.at || 0) > (gone.get(d.id) || 0)) gone.set(d.id, d.at);
   for (const m of data.monsters) {
     if (!m?.id || !m.name) continue;
+    if ((gone.get(m.id) || 0) >= (m.updated || 0)) continue; // deleted after this copy was last edited
     const cur = existing.get(m.id);
     if (!cur) { toPut.push(m); added++; }
     else if ((m.updated || 0) > (cur.updated || 0)) { toPut.push(m); updated++; }
@@ -736,9 +738,9 @@ async function mergeBackupData(data) {
   await db.putMany(toPut);
   for (const d of data.deletedSrd || []) {
     const cur = existing.get(d.id);
-    if (cur && (cur.updated || 0) < d.at && !toPut.some(m => m.id === d.id)) { await db.del(d.id); removed++; }
-    if (!state.deletedSrd.some(x => x.id === d.id)) state.deletedSrd.push(d);
+    if (cur && (cur.updated || 0) < d.at && !toPut.some(m => m.id === d.id)) { await db.del(d.id); await db.delImage(d.id); removed++; }
   }
+  state.deletedSrd = [...gone].map(([id, at]) => ({ id, at }));
   await db.setMeta('deletedSrd', state.deletedSrd);
   let picsN = 0;
   for (const rec of data.images || []) {
