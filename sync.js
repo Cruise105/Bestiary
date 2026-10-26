@@ -19,6 +19,19 @@ const tok = { value: null, exp: 0 };
 
 const $ = s => document.querySelector(s);
 
+/* ---------- suite core: one shared Google sign-in for every app on this site ---------- */
+let core = null;
+async function loadCore() {
+  try { core = await import('/core/suite.js'); } catch { core = null; } // not reachable: this app signs in on its own as before
+}
+// Another app on the site already signed in with what this app needs? Use that instead of asking again.
+function adoptShared() {
+  const t = core?.signedIn(SCOPE, { app: 'bestiary' });
+  if (!t || t.value === tok.value) return false;
+  tok.value = t.value; tok.exp = t.exp; tok.scope = SCOPE; saveToken();
+  return true;
+}
+
 /* ---------- small helpers ---------- */
 function hashOf(data) {
   const s = JSON.stringify({ ...data, exported: '' });
@@ -40,7 +53,8 @@ function saveToken() {
 function loadToken() {
   try { const t = JSON.parse(localStorage.getItem('bestiary-token') || 'null'); if (t && t.exp > Date.now()) Object.assign(tok, t); } catch { /* ignore */ }
 }
-const tokenValid = () => tok.value && tok.exp > Date.now() + 30000 && tok.scope === SCOPE;
+const ownValid = () => tok.value && tok.exp > Date.now() + 30000 && tok.scope === SCOPE;
+const tokenValid = () => ownValid() || (adoptShared() && ownValid());
 
 function ago(t) {
   if (!t) return 'never';
@@ -76,6 +90,7 @@ async function signIn() {
         tok.value = r.access_token; tok.scope = SCOPE;
         tok.exp = Date.now() + (Number(r.expires_in) || 3600) * 1000;
         saveToken();
+        core?.share(r, { app: 'bestiary' });
         resolve();
       },
       error_callback: e => reject(new Error(e?.type === 'popup_closed' ? 'Sign-in was closed before it finished.' : (e?.message || 'Sign-in failed.'))),
@@ -97,6 +112,7 @@ async function api(url, opts = {}) {
     // 401: sign-in expired. 403: Google refused this particular file (kept the sign-in so other files still work)
     let why = '';
     try { why = (await r.clone().json())?.error?.message || ''; } catch { /* no details */ }
+    if (r.status === 401) core?.forget(tok.value); // expired for every app, not just this one
     if (r.status === 401 || !/files\/[^/?]+/.test(url) || /appDataFolder/.test(url)) { tok.value = null; saveToken(); }
     const err = new Error(why || 'auth'); err.auth = r.status === 401 || !tok.value; err.status = r.status; throw err;
   }
@@ -214,6 +230,7 @@ export async function syncNow({ interactive = false, quiet = false } = {}) {
 
 async function disconnect() {
   if (tok.value && window.google?.accounts?.oauth2) { try { google.accounts.oauth2.revoke(tok.value, () => {}); } catch { /* ignore */ } }
+  core?.forget(tok.value);
   tok.value = null; tok.exp = 0; saveToken();
   Object.assign(ss, { connected: false, fileId: null, lastSync: 0, lastHash: '', remoteModified: '' });
   await saveState();
@@ -253,6 +270,7 @@ export async function initSync(helpers) {
   ctx = helpers;
   const saved = await db.getMeta('sync');
   if (saved) Object.assign(ss, saved);
+  await loadCore();
   loadToken();
   status = ss.connected ? (tokenValid() ? 'ok' : 'signin') : 'off';
   renderStatus();
