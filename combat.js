@@ -478,8 +478,12 @@ function liveWatch() {
   }
 }
 
-// A player tapped Start my turn, Interrupt or End my turn on their sheet
+// A player tapped Start my turn, Interrupt or End my turn on their sheet. The same tap can arrive twice (over the
+// live link, then again a few seconds later through Drive), so each one is handled once, by its id.
+const handledReqs = new Set();
 function playerRequest(p, req) {
+  if (!req?.id || handledReqs.has(req.id)) return;
+  handledReqs.add(req.id);
   const a = act();
   const fresh = req.at && Date.now() - req.at < 5 * 60000;
   const c = cs.enc.combatants.find(x => x.kind === 'pc' && x.pcId === p.id);
@@ -491,7 +495,11 @@ function playerRequest(p, req) {
   else if (req.kind === 'point' && o.includes('ppoint')) { pickNext(u.key, 'ppoint'); say('interrupted with their Interrupt Point'); }
   else if (req.kind === 'free' && o.includes('free')) { pickNext(u.key, 'free'); say('interrupted (free, they were hurt)'); }
   else if (req.kind === 'end' && a.current === u.key) { endTurnActive(); say('ended their turn'); }
-  else { ctx.toast(`${p.name} tried to ${req.kind === 'end' ? 'end their turn' : req.kind === 'start' ? 'start their turn' : 'interrupt'}, but that isn't possible right now.`); schedulePublish(); }
+  else {
+    // only worth a note while it's fresh; a late copy of a tap is just ignored
+    if (Date.now() - req.at < 15000) ctx.toast(`${p.name} tried to ${req.kind === 'end' ? 'end their turn' : req.kind === 'start' ? 'start their turn' : 'interrupt'}, but that isn't possible right now.`);
+    schedulePublish();
+  }
 }
 
 /* ---------- combat flow ---------- */
