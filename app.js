@@ -5,7 +5,14 @@ import { initConditions, loadConditions, openConditions, conditionsForBackup, me
 import { initEncounters, loadEncounters, openEncounters, saveFromCombat, encountersForBackup, mergeEncountersFromBackup } from './encounters.js';
 import { HP_BY_CR, blankMonster, detectSpellcasting, crNum, pbForCr, XP_BY_CR } from './parser.js';
 
-const SRD_VERSION = 1;
+const SRD_VERSION = 2; // 2: the 2024 monsters (SRD 5.2) alongside the 2014 ones (SRD 5.1)
+const SRD_FILES = ['srd-monsters.json', 'srd2024-monsters.json'];
+const isSrdId = id => /^srd(24)?-/.test(String(id || ''));
+// The table's edition (2014 or 2024, set in the launcher's Table Rules): the other edition's SRD monsters stay out of
+// the list unless you've edited them. Monsters already in fights or encounters are never touched.
+const edition = () => (suite()?.tableSettings?.().edition === '2024' ? '2024' : '2014');
+const otherEdition = m => !m.edited && (edition() === '2024' ? /^srd-/.test(m.id) : /^srd24-/.test(m.id));
+const loadSrd = () => Promise.all(SRD_FILES.map(f => fetch(f).then(r => r.json()).catch(() => []))).then(a => a.flat());
 const TAG_HOURS = 24;
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const CRS = ['0', '1/8', '1/4', '1/2', ...Array.from({ length: 30 }, (_, i) => String(i + 1))];
@@ -118,7 +125,7 @@ async function loadAll() {
 }
 
 async function seedSrd() {
-  const srd = await fetch('srd-monsters.json').then(r => r.json());
+  const srd = await loadSrd();
   const existing = new Set((await db.all()).map(m => m.id));
   const gone = new Set(state.deletedSrd.map(d => d.id));
   const fresh = srd.filter(m => !existing.has(m.id) && !gone.has(m.id)).map(m => ({ ...m, created: 0, updated: 0 }));
@@ -128,7 +135,7 @@ async function seedSrd() {
 
 async function srdOriginal(id) {
   if (!state.srdOriginals) {
-    const srd = await fetch('srd-monsters.json').then(r => r.json());
+    const srd = await loadSrd();
     state.srdOriginals = new Map(srd.map(m => [m.id, m]));
   }
   return state.srdOriginals.get(id);
@@ -143,8 +150,8 @@ function setMonsters(list) {
 
 async function saveMonster(m) {
   m.updated = now();
-  if (!m.created) m.created = m.id.startsWith('srd-') ? 0 : m.updated;
-  if (m.id.startsWith('srd-')) m.edited = true;
+  if (!m.created) m.created = isSrdId(m.id) ? 0 : m.updated;
+  if (isSrdId(m.id)) m.edited = true;
   await db.put(m);
   const i = state.monsters.findIndex(x => x.id === m.id);
   if (i >= 0) state.monsters[i] = m; else state.monsters.push(m);
@@ -190,6 +197,9 @@ function adoptSuiteSettings() {
   pushSuiteSettings();
 }
 window.addEventListener('dmp-suite', adoptSuiteSettings);
+// the edition can change in the launcher: show that edition's monsters
+let lastEdition = '';
+window.addEventListener('dmp-suite', () => { const e = edition(); if (lastEdition && e !== lastEdition) renderList(); lastEdition = e; });
 
 /* ---------- filters + list ---------- */
 function buildFilterOptions() {
@@ -220,9 +230,10 @@ function filtered() {
   const lo = crNum($('#fCrMin').value), hi = crNum($('#fCrMax').value);
   const sort = $('#fSort').value;
   let out = state.monsters.filter(m => {
+    if (otherEdition(m)) return false;
     if (q && !(`${m.name} ${m.tags} ${m.source} ${m.type} ${m.subtype}`.toLowerCase().includes(q))) return false;
     if (type && (m.type || '').toLowerCase() !== type) return false;
-    if (src === '__mine' ? !(m.edited || !m.id.startsWith('srd-')) : (src && !sourcesOf(m).some(s => sourceBook(s) === src))) return false;
+    if (src === '__mine' ? !(m.edited || !isSrdId(m.id)) : (src && !sourcesOf(m).some(s => sourceBook(s) === src))) return false;
     if (size && m.size !== size) return false;
     if (m.dead && $('#fHideDead').checked) return false;
     const c = crNum(m.cr);
@@ -252,7 +263,7 @@ function renderList() {
   $('#count').textContent = `${items.length} of ${state.monsters.length} monsters`;
   $('#clearFilters').hidden = !filtersActive();
   listEl.innerHTML = items.map(m => {
-    const mine = !m.id.startsWith('srd-');
+    const mine = !isSrdId(m.id);
     // Mine / Edited are reminders for recent work: shown for 24 hours, then hidden (the filter still knows)
     const fresh = t => t && now() - t < TAG_HOURS * 3600000;
     const tag = (m.dead ? '<span class="tag deadtag">Dead</span>' : '')
@@ -294,7 +305,7 @@ function renderDetail() {
       <p>Search or filter on the left, or add your own with New monster.</p></div>`;
     return;
   }
-  const isSrd = m.id.startsWith('srd-');
+  const isSrd = isSrdId(m.id);
   detailEl.innerHTML = `<div class="sb">
     <div class="sb-actions">
       <button class="btn back" type="button" data-act="back">Back to list</button>
@@ -639,7 +650,7 @@ async function onDetailAction(act, btn) {
     case 'dup': {
       const c = structuredClone(m);
       c.id = ''; c.name = `${m.name} (copy)`; c.edited = false; c.created = 0; c.updated = 0;
-      if (c.source === 'SRD 5.1') c.source = 'Homebrew';
+      if (c.source === 'SRD 5.1' || c.source === 'SRD 5.2') c.source = 'Homebrew';
       if (m.image) { const rec = await db.getImage(m.id); c.image = null; if (rec) c._img = rec.data; }
       openEditor(c, { isNew: true });
       break;
@@ -655,10 +666,10 @@ async function onDetailAction(act, btn) {
       break;
     }
     case 'delete': {
-      if (!await confirmBox(`Delete ${m.name}?`, m.id.startsWith('srd-') ? 'It is removed from your library. Backups you load later can bring it back.' : 'This removes it from this device. If it is in a backup file, loading that backup brings it back.', 'Delete')) return;
+      if (!await confirmBox(`Delete ${m.name}?`, isSrdId(m.id) ? 'It is removed from your library. Backups you load later can bring it back.' : 'This removes it from this device. If it is in a backup file, loading that backup brings it back.', 'Delete')) return;
       await db.del(m.id);
       await db.delImage(m.id);
-      if (m.id.startsWith('srd-')) {
+      if (isSrdId(m.id)) {
         state.deletedSrd = state.deletedSrd.filter(d => d.id !== m.id).concat({ id: m.id, at: now() });
         await db.setMeta('deletedSrd', state.deletedSrd);
       }
@@ -750,7 +761,7 @@ async function onDetailAction(act, btn) {
 // Everything worth carrying between devices (also what Drive sync stores)
 async function buildBackupData({ images = false } = {}) {
   const all = await db.all();
-  const mine = all.filter(m => !m.id.startsWith('srd-') || m.edited);
+  const mine = all.filter(m => !isSrdId(m.id) || m.edited);
   const pics = [];
   if (images) for (const m of mine) if (m.image) { const rec = await db.getImage(m.id); if (rec) pics.push(rec); }
   return { images: pics, app: 'bestiary', format: 1, exported: new Date().toISOString(), monsters: mine, deletedSrd: state.deletedSrd, settings: state.settings, party: partyForBackup(), encounters: encountersForBackup(), conditions: conditionsForBackup() };

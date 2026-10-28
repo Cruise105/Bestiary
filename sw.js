@@ -1,9 +1,9 @@
 // Offline support: every app file is cached on first visit, then served from the device.
 // When you publish an update, bump VERSION so tablets pick up the new files on their next launch.
-const VERSION = 'bestiary-v43';
+const VERSION = 'bestiary-v44';
 const FILES = [
   './', './index.html', './styles.css', './app.js', './db.js', './parser.js', './combat.js', './encounters.js', './sync.js', './sheets.js', './cs-model.js', './cs-rules.js', './conditions.js', './conditions-srd.js', './player.html', './player.js',
-  './srd-monsters.json', './manifest.webmanifest',
+  './srd-monsters.json', './srd2024-monsters.json', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
   './fonts/alegreya-latin-400-normal.woff2', './fonts/alegreya-latin-400-italic.woff2',
   './fonts/alegreya-latin-700-normal.woff2', './fonts/alegreya-latin-800-normal.woff2', './fonts/alegreya-latin-700-italic.woff2',

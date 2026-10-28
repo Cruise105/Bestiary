@@ -1,6 +1,10 @@
 // Condition rules: the SRD's standard conditions plus the table's own custom ones (Rage, Bless, Bane…).
 import { db } from './db.js';
-import { SRD_CONDITIONS } from './conditions-srd.js';
+import { SRD_CONDITIONS as SRD_2014, SRD_CONDITIONS_2024 } from './conditions-srd.js';
+import { suite } from './sync.js';
+// The table's edition picks the wording (2024 rewrote the conditions); anything 2024 doesn't have keeps the 2014 text
+const is2024 = () => suite()?.tableSettings?.().edition === '2024';
+const SRD_CONDITIONS = new Proxy({}, { get: (_, k) => (is2024() && SRD_CONDITIONS_2024[k]) || SRD_2014[k] });
 
 export const STANDARD = ['blinded', 'charmed', 'deafened', 'frightened', 'grappled', 'incapacitated', 'invisible',
   'paralyzed', 'petrified', 'poisoned', 'prone', 'restrained', 'stunned', 'unconscious'];
@@ -78,8 +82,8 @@ function renderList(focus) {
       <h3>Standard conditions</h3>
       ${STANDARD.map(k => `<article class="condref" id="cond-${k}"><h4>${k}</h4>${rulesList(SRD_CONDITIONS[k])}</article>`).join('')}
       <article class="condref" id="cond-exhaustion"><h4>exhaustion</h4>
-        <p>Measured in six levels. Effects are cumulative: a creature has its current level's effect and every level below. A long rest reduces exhaustion by one level, if the creature has also had food and drink.</p>
-        <ol class="rules">${EXHAUSTION_LEVELS.map(l => `<li>${esc(l)}</li>`).join('')}</ol></article>
+        ${is2024() ? '' : "<p>Measured in six levels. Effects are cumulative: a creature has its current level's effect and every level below. A long rest reduces exhaustion by one level, if the creature has also had food and drink.</p>"}
+        ${is2024() ? rulesList(SRD_CONDITIONS_2024.exhaustion) : `<ol class="rules">${EXHAUSTION_LEVELS.map(l => `<li>${esc(l)}</li>`).join('')}</ol>`}</article>
       <article class="condref" id="cond-concentrating"><h4>concentrating</h4>${rulesList(SRD_CONDITIONS.concentrating)}</article>
     </section>`;
   $('#condFoot').innerHTML = '<span class="spacer"></span><button class="btn primary" type="submit" value="close">Done</button>';
